@@ -1,0 +1,113 @@
+{
+  "name": "jev-code-check",
+  "displayName": "Jev Realtime Code Check",
+  "description": "Checks your local Git changes against Markdown coding rules using TypeSafe AI's Jev model.",
+  "version": "0.1.0",
+  "publisher": "local-dev",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other", "Linters"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "jevCodeCheck.analyze",
+        "title": "Jev: Analyze changes",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "jevCodeCheck.setApiKey",
+        "title": "Jev: Set Jev API key"
+      },
+      {
+        "command": "jevCodeCheck.clearApiKey",
+        "title": "Jev: Clear Jev API key"
+      },
+      {
+        "command": "jevCodeCheck.toggleAutoAnalyze",
+        "title": "Jev: Toggle automatic analysis for this workspace"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "jevCodeCheck",
+          "title": "Jev Code Check",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "jevCodeCheck": [
+        {
+          "id": "jevCodeCheck.rulesView",
+          "name": "Rule Assessments"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "jevCodeCheck.analyze",
+          "when": "view == jevCodeCheck.rulesView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Jev Code Check",
+      "properties": {
+        "jevCodeCheck.rulesFile": {
+          "type": "string",
+          "default": "jev-rules.md",
+          "description": "Path (relative to the workspace root) to the Markdown rules file."
+        },
+        "jevCodeCheck.autoAnalyzeOnSave": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Opt-in: automatically analyze changes on file save. When enabled, your changed code and surrounding file context are sent to TypeSafe's Jev API on every save (debounced)."
+        },
+        "jevCodeCheck.debounceMs": {
+          "type": "number",
+          "default": 1200,
+          "description": "Milliseconds to wait after a save before running automatic analysis."
+        },
+        "jevCodeCheck.maxDiffChars": {
+          "type": "number",
+          "default": 60000,
+          "description": "Maximum characters of diff text sent to Jev. Excess is omitted and disclosed."
+        },
+        "jevCodeCheck.maxFileContextChars": {
+          "type": "number",
+          "default": 20000,
+          "description": "Maximum characters of a single file's current content sent as context."
+        },
+        "jevCodeCheck.maxTotalContextChars": {
+          "type": "number",
+          "default": 100000,
+          "description": "Maximum total characters of file context (across all changed files) sent to Jev."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./ --noEmit && node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc -p ./ --noEmit",
+    "test:unit": "node --import tsx --test test/*.test.ts",
+    "package": "npm run compile && npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.5",
+    "tsx": "^4.16.0",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "jev-demo-fixture",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Minimal source fixture for demoing the Jev Realtime Code Check extension. Not meant to be built or run.",
+  "dependencies": {
+    "react": "^18.2.0"
+  }
+}
