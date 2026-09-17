@@ -71,12 +71,12 @@
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "description": "Opt-in: automatically analyze changes on file save. When enabled, your changed code and surrounding file context are sent to TypeSafe's Jev API on every save (debounced)."
+          "description": "Opt-in: automatically analyze changes as you edit (typing, paste, or any other change) and on save. When enabled, your changed code and surrounding file context are sent to TypeSafe's Jev API, throttled to at most once per second."
         },
         "jevCodeCheck.debounceMs": {
           "type": "number",
           "default": 1200,
-          "description": "Milliseconds to wait after a save before running automatic analysis."
+          "description": "Milliseconds of inactivity to wait before running automatic analysis. Always floored at 1000ms, even if set lower."
         },
         "jevCodeCheck.maxDiffChars": {
           "type": "number",

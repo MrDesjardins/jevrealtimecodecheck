@@ -70,6 +70,38 @@ class InfoTreeItem extends vscode.TreeItem {
   }
 }
 
+// Groups are ordered most-actionable first (violations/errors) so they land
+// at the top of the panel; compliant/not-applicable start collapsed since
+// with dozens of rules they're the bulk of the noise, not the signal.
+const GROUP_ORDER: {
+  outcome: RuleAssessment["outcome"];
+  label: string;
+  initialState: vscode.TreeItemCollapsibleState;
+}[] = [
+  { outcome: "violation", label: "Violations", initialState: vscode.TreeItemCollapsibleState.Expanded },
+  { outcome: "error", label: "Errors", initialState: vscode.TreeItemCollapsibleState.Expanded },
+  {
+    outcome: "insufficient_context",
+    label: "Insufficient context",
+    initialState: vscode.TreeItemCollapsibleState.Expanded,
+  },
+  { outcome: "not_applicable", label: "Not applicable", initialState: vscode.TreeItemCollapsibleState.Collapsed },
+  { outcome: "compliant", label: "Compliant", initialState: vscode.TreeItemCollapsibleState.Collapsed },
+];
+
+class GroupTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly outcome: RuleAssessment["outcome"],
+    label: string,
+    public readonly assessments: RuleAssessment[],
+    initialState: vscode.TreeItemCollapsibleState
+  ) {
+    super(`${label} (${assessments.length})`, initialState);
+    this.iconPath = outcomeIcon(outcome);
+    this.contextValue = "jevRuleGroup";
+  }
+}
+
 export class RulesTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
@@ -105,7 +137,11 @@ export class RulesTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
     return element;
   }
 
-  getChildren(): vscode.TreeItem[] {
+  getChildren(element?: vscode.TreeItem): vscode.TreeItem[] {
+    if (element instanceof GroupTreeItem) {
+      return element.assessments.map((a) => new RuleTreeItem(a));
+    }
+
     switch (this.status.kind) {
       case "idle":
         return [new InfoTreeItem("Run \"Jev: Analyze changes\" to get started", "info")];
@@ -125,11 +161,21 @@ export class RulesTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
         return [new InfoTreeItem("No changes relative to HEAD", "check")];
       case "error":
         return [new InfoTreeItem(`Error: ${this.status.message}`, "error")];
-      case "result":
-        if (this.status.result.assessments.length === 0) {
+      case "result": {
+        const assessments = this.status.result.assessments;
+        if (assessments.length === 0) {
           return [new InfoTreeItem("No rule assessments returned", "warning")];
         }
-        return this.status.result.assessments.map((a) => new RuleTreeItem(a));
+        return GROUP_ORDER.filter((g) => assessments.some((a) => a.outcome === g.outcome)).map(
+          (g) =>
+            new GroupTreeItem(
+              g.outcome,
+              g.label,
+              assessments.filter((a) => a.outcome === g.outcome),
+              g.initialState
+            )
+        );
+      }
     }
   }
 }

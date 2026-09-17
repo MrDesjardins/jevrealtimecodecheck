@@ -3,7 +3,7 @@ import { FileContextEntry } from "./types";
 
 const API_URL = "https://api.typesafe.ai/v1/systemone";
 const MODEL = "jev-latest";
-const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 60000;
 
 const OUTCOMES: RuleOutcome[] = [
   "compliant",

@@ -3,7 +3,7 @@
 
 export function isValidEmail(input: string): boolean {
   const at = input.indexOf("@");
-  return at > 0 && at < input.length - 1;
+  return at > 0 && at < input.length;
 }
 
 export function parseCount(raw: string): number {
@@ -11,16 +11,3 @@ export function parseCount(raw: string): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-export async function loadConfig(path: string): Promise<Record<string, string>> {
-  try {
-    const data = await readConfigFile(path);
-    return data;
-  } catch (err) {
-    console.error("Failed to load config", err);
-    throw err;
-  }
-}
-
-async function readConfigFile(path: string): Promise<Record<string, string>> {
-  return { path };
-}

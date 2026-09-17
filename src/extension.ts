@@ -38,7 +38,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   function scheduleDebouncedAnalyze(): void {
     const cfg = vscode.workspace.getConfiguration("jevCodeCheck");
-    const delay = cfg.get<number>("debounceMs", 1200);
+    // Floored at 1s regardless of configuration, so rapid typing/paste/LLM
+    // edits can never trigger more than one analysis per second.
+    const delay = Math.max(1000, cfg.get<number>("debounceMs", 1200));
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
@@ -73,7 +75,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const current = cfg.get<boolean>("autoAnalyzeOnSave", false);
       if (!current) {
         const choice = await vscode.window.showInformationMessage(
-          "Enabling automatic analysis will send your changed code (diff) and surrounding file context to TypeSafe's Jev API every time you save, for this workspace. Enable?",
+          "Enabling automatic analysis will send your changed code (diff) and surrounding file context to TypeSafe's Jev API as you edit (typing, paste, or any other change) and on save, for this workspace. Requests are throttled to at most once per second. Enable?",
           { modal: true },
           "Enable"
         );
@@ -87,7 +89,7 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.ConfigurationTarget.Workspace
       );
       vscode.window.showInformationMessage(
-        `Jev automatic analysis on save is now ${!current ? "ON" : "OFF"} for this workspace.`
+        `Jev automatic analysis is now ${!current ? "ON" : "OFF"} for this workspace.`
       );
     })
   );
@@ -110,9 +112,33 @@ export function activate(context: vscode.ExtensionContext): void {
       if (autoEnabled && savedPath.startsWith(root)) {
         scheduleDebouncedAnalyze();
       }
+    }),
+
+    // Covers typing, paste, and programmatic/LLM edits alike — VS Code
+    // reports them all through the same change event. scheduleDebouncedAnalyze
+    // shares one timer with the save handler above and is floored at 1s, so
+    // this can't fire more than once per second regardless of edit source.
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.contentChanges.length === 0 || e.document.uri.scheme !== "file") {
+        return;
+      }
+      const root = getWorkspaceRoot();
+      if (!root) return;
+
+      const changedPath = e.document.uri.fsPath;
+      const rulesPath = getRulesFileAbsPath(root);
+      if (changedPath === rulesPath) {
+        scheduleDebouncedAnalyze();
+        return;
+      }
+
+      const cfg = vscode.workspace.getConfiguration("jevCodeCheck", e.document.uri);
+      const autoEnabled = cfg.get<boolean>("autoAnalyzeOnSave", false);
+      if (autoEnabled && changedPath.startsWith(root)) {
+        scheduleDebouncedAnalyze();
+      }
     })
   );
-
 }
 
 export function deactivate(): void {
