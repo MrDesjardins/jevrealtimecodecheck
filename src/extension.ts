@@ -3,6 +3,7 @@ import { AnalysisController, AnalysisStatus } from "./analysisController";
 import { RulesTreeProvider } from "./sidebarProvider";
 import { setApiKey, clearApiKey } from "./credentials";
 import { isInsideDir, isRuleFilePath } from "./pathUtils";
+import { EXAMPLE_RULE_CONTENT, EXAMPLE_RULE_FILE_NAME } from "./exampleRule";
 
 function getWorkspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -124,6 +125,35 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       }
     ),
+
+    vscode.commands.registerCommand("jevCodeCheck.createExampleRule", async () => {
+      const root = getWorkspaceRoot();
+      if (!root) {
+        vscode.window.showWarningMessage("Jev Code Check: open a folder/workspace first.");
+        return;
+      }
+      const rulesDir = vscode.Uri.file(getRulesDirAbsPath(root));
+      const fileUri = vscode.Uri.joinPath(rulesDir, EXAMPLE_RULE_FILE_NAME);
+
+      let alreadyExists = true;
+      try {
+        await vscode.workspace.fs.stat(fileUri);
+      } catch {
+        alreadyExists = false;
+      }
+      if (!alreadyExists) {
+        await vscode.workspace.fs.createDirectory(rulesDir);
+        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(EXAMPLE_RULE_CONTENT, "utf8"));
+      }
+
+      const doc = await vscode.workspace.openTextDocument(fileUri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+      if (!alreadyExists) {
+        vscode.window.showInformationMessage(
+          `Jev Code Check: created ${EXAMPLE_RULE_FILE_NAME} — edit it, add more *.md files alongside it, then run "Jev: Analyze changes".`
+        );
+      }
+    }),
 
     vscode.commands.registerCommand("jevCodeCheck.toggleAutoAnalyze", async () => {
       const cfg = vscode.workspace.getConfiguration("jevCodeCheck");

@@ -1,17 +1,26 @@
 # Jev Realtime Code Check — install & demo (tonight)
 
-## 1. Install the extension in Cursor
+## 1. Install the extension
 
-Package: `jev-code-check-0.1.0.vsix` (in this folder).
+One command builds, packages, and installs it (auto-detects `cursor` or
+`code` on PATH):
 
 ```bash
-cursor --install-extension /home/miste/code/jevrealtimecodecheck/jev-code-check-0.1.0.vsix
+npm run install:extension
 ```
 
-Or in Cursor's UI: Extensions view → `...` menu → **Install from VSIX...** → pick the file.
+Or manually:
+
+```bash
+npm run package   # produces jev-code-check-0.1.0.vsix
+cursor --install-extension jev-code-check-0.1.0.vsix   # or: code --install-extension ...
+```
+
+Or in the UI: Extensions view → `...` menu → **Install from VSIX...** → pick the file.
 
 Reload the window if prompted. A new **Jev Code Check** icon appears in the
-Activity Bar with a "Rule Assessments" panel.
+Activity Bar with a "Rule Assessments" panel. The extension itself ships
+with **no rules** — that's on the installing project to define (see step 5).
 
 ## 2. Set your API key (optional but recommended for live results)
 
@@ -63,13 +72,20 @@ applies_to: **/*.ts, **/*.tsx
 A file's rules only get sent to Jev when at least one **changed** file in
 the diff matches one of its globs — a Python-only diff never loads
 `jev/typescript.md`, a `.tsx` change loads `jev/react.md`, etc. No
-frontmatter means "applies to everything" (backward compatible with a
-single flat rules file). The sidebar header shows which rule files were
-actually applied for a given analysis.
+frontmatter means "applies to everything". The sidebar header shows which
+rule files were actually applied for a given analysis.
 
-Root repo (`/home/miste/code/jevrealtimecodecheck/jev/`): `typescript.md`
-(74 rules, `**/*.ts`), `react.md` (3 rules, `**/*.tsx`), `markdown.md` (5
-rules, `**/*.md`), `css.md` (5 rules, `**/*.css`).
+**In a fresh install with no rules yet**, the sidebar's empty state is
+clickable: it runs **Jev: Create example rule**, which scaffolds
+`jev/example.md` with one generic rule (`applies_to: **/*`) so you have a
+real file to edit instead of a blank slate. Delete it, edit it, or add more
+`*.md` files alongside it — that's the whole authoring model.
+
+This repo's own dogfooding rules, checking its own source, live in
+`/home/miste/code/jevrealtimecodecheck/jev/` (11 files, 370 rules across
+TypeScript, React, CSS, Sass, Markdown, Python, Go, JSON, YAML, HTML, and
+shell) — none of that ships with the extension; it's just this project's
+own rule set, kept in the repo like any other file.
 
 ## 6. Run the demo
 

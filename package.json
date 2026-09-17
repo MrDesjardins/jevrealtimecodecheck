@@ -31,6 +31,10 @@
       {
         "command": "jevCodeCheck.toggleAutoAnalyze",
         "title": "Jev: Toggle automatic analysis for this workspace"
+      },
+      {
+        "command": "jevCodeCheck.createExampleRule",
+        "title": "Jev: Create example rule"
       }
     ],
     "viewsContainers": {
@@ -106,7 +110,8 @@
     "watch": "node esbuild.js --watch",
     "typecheck": "tsc -p ./ --noEmit",
     "test:unit": "node --import tsx --test test/*.test.ts",
-    "package": "npm run compile && npx @vscode/vsce package --no-dependencies"
+    "package": "npm run compile && npx @vscode/vsce@2 package --no-dependencies",
+    "install:extension": "bash scripts/install.sh"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

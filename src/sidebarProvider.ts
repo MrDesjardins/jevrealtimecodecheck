@@ -105,14 +105,22 @@ class RuleTreeItem extends vscode.TreeItem {
 }
 
 class InfoTreeItem extends vscode.TreeItem {
-  constructor(label: string, icon: string, tooltip?: string) {
+  constructor(label: string, icon: string, tooltip?: string, command?: vscode.Command) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(icon);
     if (tooltip) {
       this.tooltip = tooltip;
     }
+    if (command) {
+      this.command = command;
+    }
   }
 }
+
+const CREATE_EXAMPLE_RULE_COMMAND: vscode.Command = {
+  command: "jevCodeCheck.createExampleRule",
+  title: "Create an example rule",
+};
 
 // Groups are ordered most-actionable first (violations/errors) so they land
 // at the top of the panel; compliant/not-applicable start collapsed since
@@ -196,7 +204,8 @@ export class RulesTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
           new InfoTreeItem(
             this.status.message,
             "warning",
-            "Add one or more top-level # headings to a rule file."
+            "Click to create a starter example.md with one rule and an applies_to glob you can edit.",
+            CREATE_EXAMPLE_RULE_COMMAND
           ),
         ];
       case "unsupported":

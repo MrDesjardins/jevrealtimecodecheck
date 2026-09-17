@@ -95,10 +95,18 @@ console.log("Config loaded", path);
 ## Install
 
 ```bash
-cursor --install-extension jev-code-check-0.1.0.vsix
+npm run install:extension
 ```
 
-Or in the UI: Extensions view → `...` → **Install from VSIX...**.
+Builds, packages, and installs into whichever of `cursor`/`code` is on your
+PATH, in one step. Or manually: `npm run package` produces a `.vsix`, then
+Extensions view → `...` → **Install from VSIX...**.
+
+The extension ships with **no rules** — that's intentionally left to
+whoever installs it. If your workspace has no `jev/` directory yet, the
+sidebar's empty state is clickable and runs **Jev: Create example rule**,
+which scaffolds a single starter `jev/example.md` (`applies_to: **/*`) to
+edit from, rather than requiring you to write the format from scratch.
 
 ## Setup
 
