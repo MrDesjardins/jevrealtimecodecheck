@@ -62,10 +62,10 @@
     "configuration": {
       "title": "Jev Code Check",
       "properties": {
-        "jevCodeCheck.rulesFile": {
+        "jevCodeCheck.rulesDir": {
           "type": "string",
-          "default": "jev-rules.md",
-          "description": "Path (relative to the workspace root) to the Markdown rules file."
+          "default": "jev",
+          "description": "Path (relative to the workspace root) to a directory of Markdown rule files. Each *.md file may start with an '---' frontmatter block containing 'applies_to: <glob>, <glob>, ...' (e.g. '**/*.ts, **/*.tsx'); rules from a file only apply when at least one changed file matches its globs. A file with no frontmatter applies to every changed file."
         },
         "jevCodeCheck.autoAnalyzeOnSave": {
           "type": "boolean",
@@ -80,18 +80,23 @@
         },
         "jevCodeCheck.maxDiffChars": {
           "type": "number",
-          "default": 60000,
-          "description": "Maximum characters of diff text sent to Jev. Excess is omitted and disclosed."
+          "default": 20000,
+          "description": "Maximum characters of diff text sent to Jev. Excess is omitted and disclosed. Kept conservative (vs. the API's per-request token limit) since this is sent in full with every rule batch."
         },
         "jevCodeCheck.maxFileContextChars": {
           "type": "number",
-          "default": 20000,
+          "default": 8000,
           "description": "Maximum characters of a single file's current content sent as context."
         },
         "jevCodeCheck.maxTotalContextChars": {
           "type": "number",
-          "default": 100000,
+          "default": 40000,
           "description": "Maximum total characters of file context (across all changed files) sent to Jev."
+        },
+        "jevCodeCheck.maxRulesPerRequest": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum number of rules sent in a single Jev request. Large or richly-documented rule files are split into batches of this size (sent with limited concurrency) to stay under the API's per-request token limit. Lower this if you see a 'payload too large' / max_token_exceeded error."
         }
       }
     }

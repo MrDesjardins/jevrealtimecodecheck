@@ -49,11 +49,33 @@ git commit -m "Add Jev Realtime Code Check extension"
 diffs from either workspace below are scoped correctly to whatever folder
 you open.
 
-## 5. Run the demo
+## 5. Rules live in a directory now, not one file
+
+`jevCodeCheck.rulesDir` (default `jev/`) points to a folder of `*.md` rule
+files. Each file may start with a frontmatter header:
+
+```md
+---
+applies_to: **/*.ts, **/*.tsx
+---
+```
+
+A file's rules only get sent to Jev when at least one **changed** file in
+the diff matches one of its globs — a Python-only diff never loads
+`jev/typescript.md`, a `.tsx` change loads `jev/react.md`, etc. No
+frontmatter means "applies to everything" (backward compatible with a
+single flat rules file). The sidebar header shows which rule files were
+actually applied for a given analysis.
+
+Root repo (`/home/miste/code/jevrealtimecodecheck/jev/`): `typescript.md`
+(74 rules, `**/*.ts`), `react.md` (3 rules, `**/*.tsx`), `markdown.md` (5
+rules, `**/*.md`), `css.md` (5 rules, `**/*.css`).
+
+## 6. Run the demo
 
 Two options, same repo:
 
-**A. React demo (3 original rules, `demo-fixture/jev-rules.md`):**
+**A. React demo (`demo-fixture/jev/typescript.md` + `react.md`):**
 
 ```bash
 cursor /home/miste/code/jevrealtimecodecheck/demo-fixture
@@ -66,7 +88,7 @@ Follow `demo-fixture/BEFORE_AFTER.md`:
 3. Same flow for `src/UserProfile.tsx` (remove the effect cleanup) and
    `src/errors.ts` (strip the recovery sentence from the error message).
 
-**B. Root playground (8 rules, `jev-rules.md`):**
+**B. Root playground (`jev/typescript.md`, 74 rules):**
 
 ```bash
 cursor /home/miste/code/jevrealtimecodecheck

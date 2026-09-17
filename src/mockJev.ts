@@ -1,5 +1,12 @@
-import { Rule, RuleAssessment } from "./types";
+import { Rule, RuleAssessment, SEVERITY_LEVELS, SeverityLevel } from "./types";
 import { JevState } from "./jevClient";
+
+function mockSeverityFor(nameLower: string): SeverityLevel {
+  if (nameLower.includes("null")) return "Blocking";
+  if (nameLower.includes("cleanup") || nameLower.includes("event listener")) return "Major";
+  if (nameLower.includes("error") && nameLower.includes("recover")) return "Moderate";
+  return "Minor";
+}
 
 /**
  * Offline fallback used only when no API key is configured, or when the
@@ -63,12 +70,22 @@ export function mockAnalyze(rules: Rule[], state: JevState): RuleAssessment[] {
       confidence = 0.4;
     }
 
+    const nonOmittedFiles = state.files.filter((f) => !f.omitted);
+    const isViolation = outcome === "violation";
+
     return {
       ruleId: rule.id,
       ruleName: rule.name,
       outcome,
       confidence,
       probabilities: null,
+      severity: isViolation
+        ? (() => {
+            const level = mockSeverityFor(nameLower);
+            return { level, score: SEVERITY_LEVELS.indexOf(level), confidence };
+          })()
+        : undefined,
+      locatedFile: isViolation ? nonOmittedFiles[0]?.path ?? null : undefined,
     };
   });
 }

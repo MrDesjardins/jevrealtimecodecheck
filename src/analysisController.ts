@@ -1,28 +1,48 @@
 import * as vscode from "vscode";
 import { join } from "node:path";
-import { readFile } from "node:fs/promises";
-import { parseRules } from "./rulesParser";
 import { collectGitDiff } from "./gitDiff";
 import { collectFileContext } from "./fileContext";
-import { callJev, JevApiError, JevState } from "./jevClient";
+import { callJev, enrichViolations, JevApiError, JevState } from "./jevClient";
 import { mockAnalyze } from "./mockJev";
 import { getApiKey } from "./credentials";
-import { AnalysisResult, Rule } from "./types";
+import { firstChangedLineByFile, parseDiffBlocks } from "./diffLocations";
+import { loadRuleFiles, RuleFile } from "./ruleFiles";
+import { matchesAnyGlob } from "./globMatch";
+import { AnalysisResult, Rule, RuleAssessment } from "./types";
 
 export type AnalysisStatus =
   | { kind: "idle" }
   | { kind: "running" }
   | { kind: "result"; result: AnalysisResult }
-  | { kind: "no_rules"; rulesFilePath: string }
+  | { kind: "no_rules"; message: string }
   | { kind: "unsupported"; reason: string }
   | { kind: "empty" }
   | { kind: "error"; message: string };
 
 export interface AnalysisConfig {
-  rulesFile: string;
+  rulesDir: string;
   maxDiffChars: number;
   maxFileContextChars: number;
   maxTotalContextChars: number;
+  maxRulesPerRequest: number;
+}
+
+/**
+ * Combines rules from every rule file whose `applies_to` globs match at
+ * least one changed file. Rule ids are namespaced per file
+ * (`<file>::<rule-id>`) since parseRules only guarantees uniqueness within
+ * a single file, and multiple rule files are now combined into one set of
+ * Jev questions.
+ */
+function selectApplicableRules(
+  ruleFiles: RuleFile[],
+  changedFiles: string[]
+): { rules: Rule[]; matchedFileNames: string[] } {
+  const matched = ruleFiles.filter((rf) => changedFiles.some((f) => matchesAnyGlob(f, rf.globs)));
+  const rules: Rule[] = matched.flatMap((rf) =>
+    rf.rules.map((r) => ({ ...r, id: `${rf.relPath}::${r.id}` }))
+  );
+  return { rules, matchedFileNames: matched.map((rf) => rf.relPath) };
 }
 
 export class AnalysisController {
@@ -37,10 +57,11 @@ export class AnalysisController {
   private getConfig(): AnalysisConfig {
     const cfg = vscode.workspace.getConfiguration("jevCodeCheck");
     return {
-      rulesFile: cfg.get<string>("rulesFile", "jev-rules.md"),
-      maxDiffChars: cfg.get<number>("maxDiffChars", 60000),
-      maxFileContextChars: cfg.get<number>("maxFileContextChars", 20000),
-      maxTotalContextChars: cfg.get<number>("maxTotalContextChars", 100000),
+      rulesDir: cfg.get<string>("rulesDir", "jev"),
+      maxDiffChars: cfg.get<number>("maxDiffChars", 20000),
+      maxFileContextChars: cfg.get<number>("maxFileContextChars", 8000),
+      maxTotalContextChars: cfg.get<number>("maxTotalContextChars", 40000),
+      maxRulesPerRequest: cfg.get<number>("maxRulesPerRequest", 20),
     };
   }
 
@@ -59,23 +80,7 @@ export class AnalysisController {
 
     try {
       const config = this.getConfig();
-      const rulesFilePath = join(workspaceRoot, config.rulesFile);
-
-      let rulesText: string;
-      try {
-        rulesText = await readFile(rulesFilePath, "utf8");
-      } catch {
-        if (myGen !== this.generation) return;
-        this.onStatus({ kind: "no_rules", rulesFilePath: config.rulesFile });
-        return;
-      }
-
-      const rules: Rule[] = parseRules(rulesText);
-      if (myGen !== this.generation) return;
-      if (rules.length === 0) {
-        this.onStatus({ kind: "no_rules", rulesFilePath: config.rulesFile });
-        return;
-      }
+      const rulesDirAbsPath = join(workspaceRoot, config.rulesDir);
 
       const diffResult = await collectGitDiff(workspaceRoot);
       if (myGen !== this.generation) return;
@@ -89,7 +94,28 @@ export class AnalysisController {
         return;
       }
 
-      const disclosures: string[] = [];
+      const ruleFiles = await loadRuleFiles(rulesDirAbsPath);
+      if (myGen !== this.generation) return;
+      if (ruleFiles.length === 0) {
+        this.onStatus({
+          kind: "no_rules",
+          message: `No rule files (*.md) found in "${config.rulesDir}/". Add one, e.g. "${config.rulesDir}/typescript.md".`,
+        });
+        return;
+      }
+
+      const { rules, matchedFileNames } = selectApplicableRules(ruleFiles, diffResult.changedFiles);
+      if (rules.length === 0) {
+        this.onStatus({
+          kind: "no_rules",
+          message: `None of the ${ruleFiles.length} rule file(s) in "${config.rulesDir}/" (${ruleFiles
+            .map((f) => f.relPath)
+            .join(", ")}) apply to the changed file(s): ${diffResult.changedFiles.join(", ")}.`,
+        });
+        return;
+      }
+
+      const disclosures: string[] = [`Applied rules from: ${matchedFileNames.join(", ")}.`];
       let diff = diffResult.diff;
       let diffTruncated = false;
       if (diff.length > config.maxDiffChars) {
@@ -135,22 +161,84 @@ export class AnalysisController {
 
       const assessments = useMock
         ? mockAnalyze(rules, state)
-        : await callJev(apiKey as string, rules, state, abort.signal);
+        : await callJev(apiKey as string, rules, state, abort.signal, config.maxRulesPerRequest);
 
       if (myGen !== this.generation) return;
 
-      const result: AnalysisResult = {
+      const buildResult = (): AnalysisResult => ({
         timestamp: Date.now(),
         durationMs: Date.now() - startedAt,
         assessments,
         contextNote: disclosures.length > 0 ? disclosures.join(" • ") : null,
         source: useMock ? "mock" : "live",
-      };
-      this.onStatus({ kind: "result", result });
+      });
+
+      // Second pass: for real violations only, ask Jev to rate severity
+      // (score primitive) and localize the responsible file (choice
+      // primitive), on top of the initial choice-per-rule pass. Best-effort —
+      // a failure here is disclosed but does not fail the whole analysis.
+      //
+      // Classifications are shown immediately, before this second request
+      // even goes out, so the (usually much larger) primary result isn't
+      // held up waiting on severity/location for a handful of violations.
+      const violations: RuleAssessment[] = useMock
+        ? []
+        : assessments.filter((a) => a.outcome === "violation");
+
+      if (violations.length > 0) {
+        this.onStatus({ kind: "result", result: buildResult() });
+
+        const rulesById = new Map(rules.map((r) => [r.id, r]));
+        const diffBlocks = parseDiffBlocks(diffResult.diff);
+        try {
+          const enrichment = await enrichViolations(
+            apiKey as string,
+            violations
+              .map((a) => rulesById.get(a.ruleId))
+              .filter((r): r is Rule => Boolean(r))
+              .map((rule) => ({ rule })),
+            state,
+            diffBlocks,
+            abort.signal,
+            config.maxRulesPerRequest
+          );
+          if (myGen !== this.generation) return;
+          for (const a of violations) {
+            const e = enrichment.get(a.ruleId);
+            if (e) {
+              a.severity = e.severity ?? undefined;
+              a.locatedFile = e.locatedFile;
+              a.locatedLine = e.locatedLine;
+            }
+          }
+        } catch (err) {
+          disclosures.push(
+            `Severity/location enrichment failed (${
+              err instanceof Error ? err.message : String(err)
+            }) — violations shown without severity or file localization.`
+          );
+        }
+      }
+
+      // Fallback only: live enrichment already resolves a precise locatedLine
+      // per diff block. Mock mode only sets locatedFile, so fall back to the
+      // file's first changed line there.
+      const diffLineByFile = firstChangedLineByFile(diffResult.diff);
+      for (const a of assessments) {
+        if (a.locatedFile && a.locatedLine == null) {
+          a.locatedLine = diffLineByFile.get(a.locatedFile) ?? null;
+        }
+      }
+
+      this.onStatus({ kind: "result", result: buildResult() });
     } catch (err) {
       if (myGen !== this.generation) return;
       if (err instanceof JevApiError) {
-        this.onStatus({ kind: "error", message: err.message });
+        const hint =
+          err.kind === "payload_too_large"
+            ? ` Try lowering "jevCodeCheck.maxRulesPerRequest" (currently ${this.getConfig().maxRulesPerRequest}) in settings.`
+            : "";
+        this.onStatus({ kind: "error", message: err.message + hint });
       } else {
         this.onStatus({
           kind: "error",

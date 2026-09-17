@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { AnalysisController } from "./analysisController";
+import { AnalysisController, AnalysisStatus } from "./analysisController";
 import { RulesTreeProvider } from "./sidebarProvider";
 import { setApiKey, clearApiKey } from "./credentials";
 
@@ -7,10 +7,17 @@ function getWorkspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
-function getRulesFileAbsPath(root: string): string {
+function getRulesDirAbsPath(root: string): string {
   const cfg = vscode.workspace.getConfiguration("jevCodeCheck");
-  const rel = cfg.get<string>("rulesFile", "jev-rules.md");
+  const rel = cfg.get<string>("rulesDir", "jev");
   return vscode.Uri.joinPath(vscode.Uri.file(root), rel).fsPath;
+}
+
+function isInsideRulesDir(filePath: string, rulesDirAbsPath: string): boolean {
+  return (
+    filePath.toLowerCase().endsWith(".md") &&
+    (filePath === rulesDirAbsPath || filePath.startsWith(rulesDirAbsPath + "/"))
+  );
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -21,8 +28,44 @@ export function activate(context: vscode.ExtensionContext): void {
   provider.treeView = treeView;
   context.subscriptions.push(treeView);
 
+  const diagnostics = vscode.languages.createDiagnosticCollection("jevCodeCheck");
+  context.subscriptions.push(diagnostics);
+
+  // Diagnostics use locatedLine, which comes straight from the diff's own
+  // hunk headers (see diffLocations.ts) — never a line number invented by
+  // the model — so a squiggle always points at a real changed line.
+  function updateDiagnostics(status: AnalysisStatus): void {
+    diagnostics.clear();
+    if (status.kind !== "result") return;
+    const root = getWorkspaceRoot();
+    if (!root) return;
+
+    const byFile = new Map<string, vscode.Diagnostic[]>();
+    for (const a of status.result.assessments) {
+      if (a.outcome !== "violation" || !a.locatedFile || !a.locatedLine) continue;
+      const line = Math.max(0, a.locatedLine - 1);
+      const range = new vscode.Range(line, 0, line, 1000);
+      const sevLabel = a.severity ? ` [${a.severity.level}]` : "";
+      const diag = new vscode.Diagnostic(
+        range,
+        `Jev: possible violation of "${a.ruleName}"${sevLabel}`,
+        a.severity?.level === "Blocking" || a.severity?.level === "Major"
+          ? vscode.DiagnosticSeverity.Warning
+          : vscode.DiagnosticSeverity.Information
+      );
+      diag.source = "Jev Code Check";
+      const list = byFile.get(a.locatedFile) ?? [];
+      list.push(diag);
+      byFile.set(a.locatedFile, list);
+    }
+    for (const [relPath, diags] of byFile) {
+      diagnostics.set(vscode.Uri.file(vscode.Uri.joinPath(vscode.Uri.file(root), relPath).fsPath), diags);
+    }
+  }
+
   const controller = new AnalysisController(context.secrets, (status) => {
     provider.setStatus(status);
+    updateDiagnostics(status);
   });
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -70,6 +113,24 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage("Jev API key cleared.");
     }),
 
+    vscode.commands.registerCommand(
+      "jevCodeCheck.openLocation",
+      async (relPath: string, line: number | null) => {
+        const root = getWorkspaceRoot();
+        if (!root) return;
+        const uri = vscode.Uri.file(vscode.Uri.joinPath(vscode.Uri.file(root), relPath).fsPath);
+        try {
+          const doc = await vscode.workspace.openTextDocument(uri);
+          const editor = await vscode.window.showTextDocument(doc, { preview: true });
+          const pos = new vscode.Position(Math.max(0, (line ?? 1) - 1), 0);
+          editor.selection = new vscode.Selection(pos, pos);
+          editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+        } catch {
+          vscode.window.showWarningMessage(`Jev Code Check: could not open "${relPath}".`);
+        }
+      }
+    ),
+
     vscode.commands.registerCommand("jevCodeCheck.toggleAutoAnalyze", async () => {
       const cfg = vscode.workspace.getConfiguration("jevCodeCheck");
       const current = cfg.get<boolean>("autoAnalyzeOnSave", false);
@@ -100,8 +161,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!root) return;
 
       const savedPath = doc.uri.fsPath;
-      const rulesPath = getRulesFileAbsPath(root);
-      if (savedPath === rulesPath) {
+      if (isInsideRulesDir(savedPath, getRulesDirAbsPath(root))) {
         // Rules changed: always reanalyze, independent of the auto-analyze setting.
         scheduleDebouncedAnalyze();
         return;
@@ -126,8 +186,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!root) return;
 
       const changedPath = e.document.uri.fsPath;
-      const rulesPath = getRulesFileAbsPath(root);
-      if (changedPath === rulesPath) {
+      if (isInsideRulesDir(changedPath, getRulesDirAbsPath(root))) {
         scheduleDebouncedAnalyze();
         return;
       }

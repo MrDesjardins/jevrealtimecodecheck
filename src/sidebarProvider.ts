@@ -32,6 +32,19 @@ function outcomeIcon(outcome: RuleAssessment["outcome"]): vscode.ThemeIcon {
   }
 }
 
+function severityIcon(level: string): vscode.ThemeIcon {
+  switch (level) {
+    case "Blocking":
+      return new vscode.ThemeIcon("flame", new vscode.ThemeColor("testing.iconFailed"));
+    case "Major":
+      return new vscode.ThemeIcon("error", new vscode.ThemeColor("testing.iconFailed"));
+    case "Moderate":
+      return new vscode.ThemeIcon("warning", new vscode.ThemeColor("problemsWarningIcon.foreground"));
+    default:
+      return new vscode.ThemeIcon("info");
+  }
+}
+
 class RuleTreeItem extends vscode.TreeItem {
   constructor(assessment: RuleAssessment) {
     super(assessment.ruleName, vscode.TreeItemCollapsibleState.None);
@@ -39,14 +52,37 @@ class RuleTreeItem extends vscode.TreeItem {
       typeof assessment.confidence === "number"
         ? `${Math.round(assessment.confidence * 100)}% confidence`
         : "confidence unknown";
-    this.description = `${outcomeLabel(assessment.outcome)} · ${confidencePct}`;
-    this.iconPath = outcomeIcon(assessment.outcome);
+
+    const descParts = [outcomeLabel(assessment.outcome)];
+    if (assessment.severity) {
+      descParts.push(assessment.severity.level);
+    }
+    descParts.push(confidencePct);
+    if (assessment.locatedFile) {
+      descParts.push(assessment.locatedFile);
+    } else if (assessment.outcome === "violation") {
+      descParts.push("location unclear");
+    }
+    this.description = descParts.join(" · ");
+    this.iconPath = assessment.severity ? severityIcon(assessment.severity.level) : outcomeIcon(assessment.outcome);
 
     const tooltipLines = [
       `Rule: ${assessment.ruleName}`,
       `Assessment: ${outcomeLabel(assessment.outcome)}`,
       `Confidence: ${confidencePct} (confidence reflects model certainty, not correctness)`,
     ];
+    if (assessment.severity) {
+      const sevConfidence =
+        typeof assessment.severity.confidence === "number"
+          ? `${Math.round(assessment.severity.confidence * 100)}%`
+          : "unknown";
+      tooltipLines.push(`Severity: ${assessment.severity.level} (confidence ${sevConfidence})`);
+    }
+    if (assessment.locatedFile) {
+      tooltipLines.push(`Likely file: ${assessment.locatedFile}${assessment.locatedLine ? `:${assessment.locatedLine}` : ""}`);
+    } else if (assessment.outcome === "violation") {
+      tooltipLines.push("Location: could not be pinned to a single file/block (not clickable).");
+    }
     if (assessment.probabilities) {
       tooltipLines.push("Probabilities:");
       for (const [k, v] of Object.entries(assessment.probabilities)) {
@@ -57,6 +93,14 @@ class RuleTreeItem extends vscode.TreeItem {
       tooltipLines.push(`Note: ${assessment.errorMessage}`);
     }
     this.tooltip = tooltipLines.join("\n");
+
+    if (assessment.locatedFile) {
+      this.command = {
+        command: "jevCodeCheck.openLocation",
+        title: "Open location",
+        arguments: [assessment.locatedFile, assessment.locatedLine ?? null],
+      };
+    }
   }
 }
 
@@ -150,9 +194,9 @@ export class RulesTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
       case "no_rules":
         return [
           new InfoTreeItem(
-            `No rules found in ${this.status.rulesFilePath}`,
+            this.status.message,
             "warning",
-            "Add one or more top-level # headings to your rules file."
+            "Add one or more top-level # headings to a rule file."
           ),
         ];
       case "unsupported":
@@ -166,15 +210,14 @@ export class RulesTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
         if (assessments.length === 0) {
           return [new InfoTreeItem("No rule assessments returned", "warning")];
         }
-        return GROUP_ORDER.filter((g) => assessments.some((a) => a.outcome === g.outcome)).map(
-          (g) =>
-            new GroupTreeItem(
-              g.outcome,
-              g.label,
-              assessments.filter((a) => a.outcome === g.outcome),
-              g.initialState
-            )
-        );
+        return GROUP_ORDER.filter((g) => assessments.some((a) => a.outcome === g.outcome)).map((g) => {
+          const members = assessments.filter((a) => a.outcome === g.outcome);
+          if (g.outcome === "violation") {
+            // Most severe first — this is the actual triage order.
+            members.sort((a, b) => (b.severity?.score ?? -1) - (a.severity?.score ?? -1));
+          }
+          return new GroupTreeItem(g.outcome, g.label, members, g.initialState);
+        });
       }
     }
   }

@@ -1,10 +1,13 @@
 # Demo script
 
-This folder is its own small Git repository (separate from the extension's
-repo) with one clean commit. Open **this folder** (`demo-fixture`) as the
-workspace root in Cursor/VS Code, then use it to see the sidebar change live.
+Open **this folder** (`demo-fixture`) as the workspace root in Cursor/VS
+Code (it's a subfolder of the main repo, so `git diff` scopes correctly to
+just its files), then use it to see the sidebar change live.
 
-The baseline commit is compliant with all three rules in `jev-rules.md`.
+Rules live in `jev/typescript.md` (applies to `**/*.ts`) and `jev/react.md`
+(applies to `**/*.tsx`) — each has an `applies_to` frontmatter header, so
+editing a `.tsx` file only loads the React rule, and editing a `.ts` file
+only loads the TypeScript rules. The baseline is compliant with all three.
 For each rule below: make the edit, save, run **Jev: Analyze changes**
 (or wait for auto-analyze if enabled), observe the badge, then revert the
 edit, save again, and watch it go back to compliant.
