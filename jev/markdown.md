@@ -29,6 +29,7 @@ do not jump from `#` straight to `###`.
 
 Good:
 ```md
+
 # Title
 
 ## Section
@@ -38,6 +39,7 @@ Good:
 
 Bad:
 ```md
+
 # Title
 
 ### Subsection
@@ -94,4 +96,302 @@ Bad:
 ## Setup
 
 See the [installation steps](#installation) above.
+```
+
+# Tables must have a header separator row
+A Markdown table must include the `---` header-separator row so it renders correctly.
+
+Good:
+```md
+| Name | Value |
+| --- | --- |
+| a | 1 |
+```
+
+Bad:
+```md
+| Name | Value |
+| a | 1 |
+```
+
+# Ordered lists should use consistent numbering
+Use consistent numbering style in ordered lists (either all `1.` or sequential numbers), not a random mix.
+
+Good:
+```md
+1. First
+2. Second
+3. Third
+```
+
+Bad:
+```md
+1. First
+1. Second
+3. Third
+```
+
+# Avoid raw HTML when a Markdown equivalent exists
+Prefer Markdown syntax over raw HTML tags for things Markdown already supports (bold, links, lists).
+
+Good:
+```md
+**Important**
+```
+
+Bad:
+```md
+<b>Important</b>
+```
+
+# TODO markers in docs need a tracking link
+A `TODO` left in published documentation must link to a tracked issue, not be a bare note.
+
+Good:
+```md
+<!-- TODO(JIRA-321): document the new auth flow -->
+```
+
+Bad:
+```md
+<!-- TODO: document this -->
+```
+
+# Images must have descriptive alt text
+An image reference `![]()` must not have empty or filename-only alt text; describe what the image shows.
+
+Good:
+```md
+![Architecture diagram showing the request flow](diagram.png)
+```
+
+Bad:
+```md
+![img](diagram.png)
+```
+
+# Avoid excessively long prose lines
+Wrap long paragraphs at a reasonable width instead of single multi-hundred-character lines, for diff readability.
+
+Good:
+```md
+This is a short paragraph that wraps
+at a reasonable width for readability.
+```
+
+Bad:
+```md
+This is a paragraph that goes on for an extremely long single line without ever wrapping which makes diffs unreadable.
+```
+
+# Avoid bare 'click here' link text
+Link text should describe the destination ("see the API reference"), not the generic "click here".
+
+Good:
+```md
+See the [API reference](https://docs.example.com/api).
+```
+
+Bad:
+```md
+Click [here](https://docs.example.com/api) for the API reference.
+```
+
+# Code spans must not span multiple lines
+Inline code spans (single backticks) must stay on one line; use a fenced code block for multi-line code.
+
+Good:
+```md
+```
+const x = 1;
+const y = 2;
+```
+```
+
+Bad:
+```md
+`const x = 1;
+const y = 2;`
+```
+
+# Avoid duplicate top-level headings
+A document should not repeat the same `#` heading text twice.
+
+Good:
+```md
+# Installation
+
+# Configuration
+```
+
+Bad:
+```md
+# Installation
+
+# Installation
+```
+
+# Front matter must be complete when present
+If a document has a frontmatter block, required fields (e.g. title) must not be left empty.
+
+Good:
+```md
+---
+title: Getting Started
+---
+```
+
+Bad:
+```md
+---
+title:
+---
+```
+
+# Do not leave placeholder text in merged docs
+Placeholder text like "TBD" or "Lorem ipsum" must not remain in a document once it is merged.
+
+Good:
+```md
+This feature lets you configure retry limits.
+```
+
+Bad:
+```md
+TBD: describe this feature.
+```
+
+# Blockquotes should not be used for plain emphasis
+Use bold/italic for emphasis; reserve blockquotes (`>`) for actual quoted material or callouts.
+
+Good:
+```md
+**Note:** this only applies to production.
+```
+
+Bad:
+```md
+> This only applies to production.
+```
+
+# Avoid nested lists deeper than 3 levels
+Deeply nested bullet lists are hard to read; restructure with headings or a table instead.
+
+Good:
+```md
+- A
+  - B
+    - C
+```
+
+Bad:
+```md
+- A
+  - B
+    - C
+      - D
+        - E
+```
+
+# Do not reference nonexistent files or paths
+A link or path mentioned in documentation must point to something that actually exists in the repository.
+
+Good:
+```md
+See [src/extension.ts](../src/extension.ts).
+```
+
+Bad:
+```md
+See [src/missing.ts](../src/missing.ts).
+```
+
+# Section headings should use sentence case
+Headings should read as sentence case ("Getting started"), not ALL CAPS or Title Case Everywhere.
+
+Good:
+```md
+## Getting started
+```
+
+Bad:
+```md
+## GETTING STARTED
+```
+
+# Avoid excessive emoji in technical documentation
+Technical docs should use emoji sparingly, if at all, so the content stays scannable and professional.
+
+Good:
+```md
+## Installation
+```
+
+Bad:
+```md
+## 🚀🔥 Installation 🎉✨
+```
+
+# Do not leave merge conflict markers in committed docs
+Markers like `<<<<<<<`, `=======`, `>>>>>>>` must never be present in a committed Markdown file.
+
+Good:
+```md
+The API returns a JSON object.
+```
+
+Bad:
+```md
+<<<<<<< HEAD
+The API returns JSON.
+=======
+The API returns a JSON object.
+>>>>>>> main
+```
+
+# Table rows must have a consistent column count
+Every row in a Markdown table must have the same number of `|`-separated columns as the header.
+
+Good:
+```md
+| A | B |
+| --- | --- |
+| 1 | 2 |
+```
+
+Bad:
+```md
+| A | B |
+| --- | --- |
+| 1 | 2 | 3 |
+```
+
+# Avoid excessively long single documents
+A document that grows very large should be split into multiple focused documents with cross-links.
+
+Good:
+```md
+See [Installation](./install.md), [Configuration](./config.md).
+```
+
+Bad:
+```md
+# One 4000-line document covering install, config, API, and troubleshooting
+```
+
+# Use a consistent bullet marker within a list
+Do not mix `-`, `*`, and `+` as bullet markers within the same list.
+
+Good:
+```md
+- First
+- Second
+- Third
+```
+
+Bad:
+```md
+- First
+* Second
++ Third
 ```
