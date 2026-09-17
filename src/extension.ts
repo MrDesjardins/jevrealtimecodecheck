@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { AnalysisController, AnalysisStatus } from "./analysisController";
 import { RulesTreeProvider } from "./sidebarProvider";
 import { setApiKey, clearApiKey } from "./credentials";
+import { isInsideDir, isRuleFilePath } from "./pathUtils";
 
 function getWorkspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -11,13 +12,6 @@ function getRulesDirAbsPath(root: string): string {
   const cfg = vscode.workspace.getConfiguration("jevCodeCheck");
   const rel = cfg.get<string>("rulesDir", "jev");
   return vscode.Uri.joinPath(vscode.Uri.file(root), rel).fsPath;
-}
-
-function isInsideRulesDir(filePath: string, rulesDirAbsPath: string): boolean {
-  return (
-    filePath.toLowerCase().endsWith(".md") &&
-    (filePath === rulesDirAbsPath || filePath.startsWith(rulesDirAbsPath + "/"))
-  );
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -161,7 +155,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!root) return;
 
       const savedPath = doc.uri.fsPath;
-      if (isInsideRulesDir(savedPath, getRulesDirAbsPath(root))) {
+      if (isRuleFilePath(savedPath, getRulesDirAbsPath(root))) {
         // Rules changed: always reanalyze, independent of the auto-analyze setting.
         scheduleDebouncedAnalyze();
         return;
@@ -169,7 +163,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const cfg = vscode.workspace.getConfiguration("jevCodeCheck", doc.uri);
       const autoEnabled = cfg.get<boolean>("autoAnalyzeOnSave", false);
-      if (autoEnabled && savedPath.startsWith(root)) {
+      if (autoEnabled && isInsideDir(savedPath, root)) {
         scheduleDebouncedAnalyze();
       }
     }),
@@ -186,14 +180,14 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!root) return;
 
       const changedPath = e.document.uri.fsPath;
-      if (isInsideRulesDir(changedPath, getRulesDirAbsPath(root))) {
+      if (isRuleFilePath(changedPath, getRulesDirAbsPath(root))) {
         scheduleDebouncedAnalyze();
         return;
       }
 
       const cfg = vscode.workspace.getConfiguration("jevCodeCheck", e.document.uri);
       const autoEnabled = cfg.get<boolean>("autoAnalyzeOnSave", false);
-      if (autoEnabled && changedPath.startsWith(root)) {
+      if (autoEnabled && isInsideDir(changedPath, root)) {
         scheduleDebouncedAnalyze();
       }
     })

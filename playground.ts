@@ -4,7 +4,6 @@ import { RulesTreeProvider } from "./sidebarProvider";
 import { setApiKey, clearApiKey } from "./credentials";
 
 
-
 function getWorkspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
