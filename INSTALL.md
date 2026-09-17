@@ -33,21 +33,49 @@ save. It's off by default and scoped per workspace. You can always trigger
 analysis manually with **Jev: Analyze changes** (also available as the sync
 icon in the panel's title bar) instead of enabling auto-save analysis.
 
-## 4. Run the demo
+## 4. Commit the current baseline first
+
+Everything (extension source, `jev-rules.md`, `demo-fixture/`,
+`playground.ts`) is currently staged but **not committed**. The extension
+diffs against `HEAD`, so commit once to establish a clean baseline before
+testing:
+
+```bash
+cd /home/miste/code/jevrealtimecodecheck
+git commit -m "Add Jev Realtime Code Check extension"
+```
+
+`demo-fixture/` is a plain folder in this same repo (no nested `.git`), so
+diffs from either workspace below are scoped correctly to whatever folder
+you open.
+
+## 5. Run the demo
+
+Two options, same repo:
+
+**A. React demo (3 original rules, `demo-fixture/jev-rules.md`):**
 
 ```bash
 cursor /home/miste/code/jevrealtimecodecheck/demo-fixture
 ```
 
-Open **that folder** as the workspace root (it's its own small Git repo with
-one clean baseline commit and `jev-rules.md` with 3 example rules). Then
-follow `demo-fixture/BEFORE_AFTER.md`:
-
+Follow `demo-fixture/BEFORE_AFTER.md`:
 1. Edit `src/api.ts` to return `null` instead of the result type → save →
    sidebar shows **Violation** for "Functions must not return null".
 2. Revert → save → back to **Compliant**.
 3. Same flow for `src/UserProfile.tsx` (remove the effect cleanup) and
    `src/errors.ts` (strip the recovery sentence from the error message).
+
+**B. Root playground (8 rules, `jev-rules.md`):**
+
+```bash
+cursor /home/miste/code/jevrealtimecodecheck
+```
+
+Edit `playground.ts` (a scratch file, not part of the extension build) —
+e.g. add `console.log(value);` inside `parseCount` → save → **Violation**
+for "No console statements". Revert → **Compliant**. Same idea for `any`
+types, empty `catch {}`, a bare `TODO`, etc.
 
 Use **Jev: Analyze changes** any time instead of waiting for auto-save.
 
