@@ -70,24 +70,29 @@ violations introduced by your change are flagged.
 
 Rules are just Markdown you write and version-control like any other
 project file — no plugin code, no schema beyond a heading and an optional
-frontmatter line. This repo ships **370 example rules across 11 file
+frontmatter line. This repo ships **479 example rules across 11 file
 types** as a starting point/stress test (TypeScript, React/TSX, CSS, Sass,
 Markdown, Python, Go, JSON, YAML, HTML, and shell), each with a Good/Bad
-code example:
+code example, spanning style/convention, language-specific "gotchas" (real
+semantic footguns — `.forEach` not awaiting async, YAML's `NO` parsing as
+`false`, Go's pre-1.22 loop-variable capture), and per-language performance,
+security, and UI/accessibility best practices (path traversal, ReDoS,
+`shell=True` injection, SQL string-building, focus-visible styles, layout
+shift, touch target size, and more):
 
 | File | Applies to | Rules |
 |---|---|---|
-| `jev/typescript.md` | `**/*.ts` | 123 |
-| `jev/python.md` | `**/*.py` | 40 |
-| `jev/css.md` | `**/*.css` | 35 |
-| `jev/go.md` | `**/*.go` | 30 |
-| `jev/markdown.md` | `**/*.md` | 25 |
-| `jev/html.md` | `**/*.html` | 24 |
-| `jev/react.md` | `**/*.tsx` | 23 |
-| `jev/scss.md` | `**/*.scss` | 20 |
-| `jev/shell.md` | `**/*.sh` | 20 |
-| `jev/json.md` | `**/*.json` | 15 |
-| `jev/yaml.md` | `**/*.yml`, `**/*.yaml` | 15 |
+| `jev/typescript.md` | `**/*.ts` | 139 |
+| `jev/python.md` | `**/*.py` | 56 |
+| `jev/css.md` | `**/*.css` | 47 |
+| `jev/go.md` | `**/*.go` | 42 |
+| `jev/shell.md` | `**/*.sh` | 29 |
+| `jev/markdown.md` | `**/*.md` | 29 |
+| `jev/html.md` | `**/*.html` | 35 |
+| `jev/react.md` | `**/*.tsx` | 33 |
+| `jev/scss.md` | `**/*.scss` | 28 |
+| `jev/yaml.md` | `**/*.yml`, `**/*.yaml` | 21 |
+| `jev/json.md` | `**/*.json` | 20 |
 
 Delete what you don't need, edit anything, or write your own — a rule file
 is just:

@@ -330,3 +330,156 @@ Bad:
 ```tsx
 <button {...props} />
 ```
+
+# useEffect closures capture values from the render that scheduled them
+A function defined inside `useEffect` closes over the props/state values from the render in which that effect ran — without the value in the dependency array, it keeps using the stale value from that render, not the latest one.
+
+Good:
+```tsx
+useEffect(() => {
+  const id = setInterval(() => console.log(count), 1000);
+  return () => clearInterval(id);
+}, [count]); // re-subscribes with the current count
+```
+
+Bad:
+```tsx
+useEffect(() => {
+  const id = setInterval(() => console.log(count), 1000); // always logs the count from the first render
+  return () => clearInterval(id);
+}, []);
+```
+
+# The key prop is not accessible via props.key inside the component
+React reserves `key` for its own reconciliation bookkeeping and strips it before passing props to the component — reading `props.key` inside the component always returns `undefined`.
+
+Good:
+```tsx
+<Row key={item.id} itemId={item.id} />
+// inside Row: props.itemId
+```
+
+Bad:
+```tsx
+<Row key={item.id} />
+// inside Row: props.key is always undefined, use a separate prop
+```
+
+# useRef changes do not trigger a re-render
+Mutating `ref.current` does not cause the component to re-render, unlike `useState` — if the UI needs to reflect that value, it must live in state (or the component needs another reason to re-render).
+
+Good:
+```tsx
+const [count, setCount] = useState(0);
+// setCount(count + 1) triggers a re-render
+```
+
+Bad:
+```tsx
+const countRef = useRef(0);
+countRef.current += 1; // UI never updates to reflect this
+```
+
+# Rendering a falsy number with && can display a stray 0
+`{count && <Badge count={count} />}` renders the literal number `0` (not nothing) when `count` is `0`, because `0` is falsy but React still renders it as text.
+
+Good:
+```tsx
+{count > 0 && <Badge count={count} />}
+```
+
+Bad:
+```tsx
+{count && <Badge count={count} />} // renders a bare "0" on the page when count is 0
+```
+
+# Reading state immediately after calling its setter returns the old value
+State updates from a setter are not applied synchronously — reading the state variable on the very next line after calling its setter still returns the value from before the update.
+
+Good:
+```tsx
+setCount((prev) => {
+  const next = prev + 1;
+  console.log(next); // correct: derived from the update itself
+  return next;
+});
+```
+
+Bad:
+```tsx
+setCount(count + 1);
+console.log(count); // still logs the OLD value, not the one just set
+```
+
+# Memoize pure presentational components rendered in large lists
+A presentational component rendered many times in a list (rows, cards) should be wrapped in `React.memo` when its parent re-renders often with the same props, to avoid re-rendering every item unnecessarily.
+
+Good:
+```tsx
+const Row = React.memo(function Row({ item }: RowProps) {
+  return <li>{item.name}</li>;
+});
+```
+
+Bad:
+```tsx
+function Row({ item }: RowProps) {
+  return <li>{item.name}</li>; // re-renders on every parent update even with unchanged props
+}
+```
+
+# Import icons/utilities in a tree-shakeable way
+Importing an entire icon or utility library's namespace just to use a few members prevents bundlers from tree-shaking the rest; import the specific members needed.
+
+Good:
+```tsx
+import { Trash2 } from "lucide-react";
+```
+
+Bad:
+```tsx
+import * as Icons from "lucide-react";
+<Icons.Trash2 /> // bundles every icon in the library
+```
+
+# Handle loading and error states explicitly
+A component fetching data must render an explicit loading and error state, not just the success case left blank — otherwise users see a blank screen with no feedback while data loads or on failure.
+
+Good:
+```tsx
+if (status === "loading") return <Spinner />;
+if (status === "error") return <ErrorMessage error={error} />;
+return <UserList users={users} />;
+```
+
+Bad:
+```tsx
+return <UserList users={users} />; // users is undefined while loading, blank screen with no feedback
+```
+
+# Reserve space for images to avoid layout shift
+An `<img>` with no explicit `width`/`height` (or `aspect-ratio`) causes the surrounding layout to jump once the image finishes loading; reserve the space up front.
+
+Good:
+```tsx
+<img src={src} width={640} height={360} alt={alt} />
+```
+
+Bad:
+```tsx
+<img src={src} alt={alt} /> // no dimensions reserved, page content jumps when it loads
+```
+
+# Validate user-controlled URLs before rendering them in href/src
+A URL sourced from user input rendered directly into `href`/`src` can be a `javascript:` URI or otherwise malicious; validate the protocol before rendering it as a link/source.
+
+Good:
+```tsx
+const safeHref = /^https?:\/\//.test(url) ? url : "#";
+<a href={safeHref}>{label}</a>
+```
+
+Bad:
+```tsx
+<a href={userSuppliedUrl}>{label}</a> // could be "javascript:alert(1)"
+```

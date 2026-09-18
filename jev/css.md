@@ -502,3 +502,236 @@ Bad:
 ```css
 .el { transition: transform 0.3s; }
 ```
+
+# Margin collapsing between adjacent block elements
+Vertical margins between adjacent (or parent/child) block-level elements can collapse into a single margin instead of adding together, which surprises people expecting the sum.
+
+Good:
+```css
+.card + .card {
+  margin-top: 16px; /* only one side sets it, avoiding the collapse ambiguity */
+}
+```
+
+Bad:
+```css
+.card {
+  margin-top: 16px;
+  margin-bottom: 16px; /* adjacent cards collapse to 16px gap, not 32px */
+}
+```
+
+# position: absolute is relative to the nearest positioned ancestor
+An absolutely positioned element is placed relative to its nearest ancestor with a `position` other than `static`, not the viewport — a missing `position: relative` on the intended container sends it somewhere else entirely.
+
+Good:
+```css
+.card {
+  position: relative;
+}
+.card .badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+```
+
+Bad:
+```css
+.card .badge {
+  position: absolute; /* .card has no position set, so this escapes further up the tree */
+  top: 0;
+  right: 0;
+}
+```
+
+# z-index has no effect on statically positioned elements
+`z-index` only applies to elements with a `position` value other than `static` (or that are flex/grid items); setting it on a normally-positioned element does nothing.
+
+Good:
+```css
+.modal {
+  position: relative;
+  z-index: 10;
+}
+```
+
+Bad:
+```css
+.modal {
+  z-index: 10; /* no effect: position defaults to static */
+}
+```
+
+# Percentage widths resolve against the containing block
+A percentage width/height is relative to the containing block's size, not the viewport — if the containing block has no defined size, the percentage may resolve to 0 or behave unexpectedly.
+
+Good:
+```css
+.container {
+  width: 800px;
+}
+.child {
+  width: 50%; /* 400px, relative to .container */
+}
+```
+
+Bad:
+```css
+.child {
+  width: 50%; /* relative to an ancestor whose own width is also auto/unset */
+}
+```
+
+# Flex/grid items have an implicit min-width: auto that can prevent shrinking
+Flex and grid items default to `min-width: auto` (based on content), which can stop them from shrinking below their content size even with `flex-shrink` set — causing overflow.
+
+Good:
+```css
+.flex-item {
+  min-width: 0;
+  flex-shrink: 1;
+}
+```
+
+Bad:
+```css
+.flex-item {
+  flex-shrink: 1; /* still won't shrink below its content's intrinsic width */
+}
+```
+
+# Transitions do not trigger across display: none
+A CSS transition does not animate when a property changes at the same time an element goes from `display: none` to visible (or vice versa); the element must already be rendered for the transition to apply.
+
+Good:
+```css
+.modal {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s;
+}
+.modal.open {
+  opacity: 1;
+  visibility: visible;
+}
+```
+
+Bad:
+```css
+.modal {
+  display: none;
+  transition: opacity 0.2s;
+}
+.modal.open {
+  display: block;
+  opacity: 1; /* no transition plays */
+}
+```
+
+# Ensure focus states are visible, not just hover states
+Interactive elements need a visible `:focus` (or `:focus-visible`) style distinct from `:hover`; keyboard users never trigger `:hover` and rely entirely on the focus indicator to know where they are.
+
+Good:
+```css
+.btn:hover, .btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+}
+```
+
+Bad:
+```css
+.btn:hover {
+  outline: 2px solid blue;
+} /* keyboard-only users never see any focus indicator */
+```
+
+# Do not remove outline without providing a replacement focus style
+`outline: none` removes the browser's default focus indicator; it must always be paired with a custom, clearly visible focus style, or keyboard navigation becomes unusable.
+
+Good:
+```css
+button:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-focus);
+}
+```
+
+Bad:
+```css
+button:focus {
+  outline: none; /* no replacement: focus becomes invisible */
+}
+```
+
+# Use a consistent spacing scale instead of ad hoc values
+Spacing values (margin, padding, gap) should come from a small shared scale (e.g. multiples of 4px/8px), not arbitrary one-off numbers scattered across the codebase, for visual consistency.
+
+Good:
+```css
+padding: var(--space-2); /* 8px, from the shared scale */
+```
+
+Bad:
+```css
+padding: 7px; /* arbitrary value not on the shared spacing scale */
+```
+
+# Prefer transform/opacity for animations over layout-triggering properties
+Animating `top`/`left`/`width`/`height` forces the browser to recompute layout on every frame; animating `transform`/`opacity` instead can run on the compositor, avoiding layout thrash.
+
+Good:
+```css
+.modal {
+  transition: transform 0.2s, opacity 0.2s;
+}
+.modal.open {
+  transform: translateY(0);
+  opacity: 1;
+}
+```
+
+Bad:
+```css
+.modal {
+  transition: top 0.2s;
+}
+.modal.open {
+  top: 0; /* triggers layout on every animation frame */
+}
+```
+
+# Do not rely on color alone for interactive affordances
+A clickable element distinguished only by a slightly different color (with no underline, icon, or other cue) is hard to identify for colorblind users and easy to miss visually.
+
+Good:
+```css
+a {
+  color: var(--color-link);
+  text-decoration: underline;
+}
+```
+
+Bad:
+```css
+a {
+  color: var(--color-link); /* no underline or other non-color cue that it's clickable */
+}
+```
+
+# Avoid disabling text selection broadly
+`user-select: none` applied broadly (e.g. on `body` or large containers) prevents users from copying text they legitimately want to select; scope it narrowly to genuinely non-text UI (icons, drag handles).
+
+Good:
+```css
+.drag-handle {
+  user-select: none;
+}
+```
+
+Bad:
+```css
+body {
+  user-select: none; /* users can no longer copy any text on the page */
+}
+```

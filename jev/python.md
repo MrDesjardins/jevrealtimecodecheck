@@ -606,3 +606,242 @@ Bad:
 ```py
 raise Exception("age must be non-negative")
 ```
+
+# Late-binding closures capture the loop variable, not its value
+A closure (lambda or nested function) created inside a loop captures the loop variable itself, not its value at that point — by the time the closure runs, the variable holds its final value from the last iteration.
+
+Good:
+```py
+callbacks = [lambda i=i: i for i in range(3)]
+# each lambda's default argument captures i's value at definition time
+```
+
+Bad:
+```py
+callbacks = [lambda: i for i in range(3)]
+# all three callbacks return 2, not 0, 1, 2
+```
+
+# except needs a tuple to catch multiple exception types
+Catching more than one exception type requires a parenthesized tuple; writing them comma-separated without parentheses is either a syntax error or (old Python 2 syntax) binds the second name as the exception variable instead.
+
+Good:
+```py
+except (ValueError, TypeError) as err:
+    handle(err)
+```
+
+Bad:
+```py
+except ValueError, TypeError: # invalid in Python 3; silently wrong intent even where it parses
+    pass
+```
+
+# Mutable objects cannot be used as dict keys or set members
+Dict keys and set members must be hashable; lists and dicts are unhashable and raise `TypeError` when used as a key or added to a set.
+
+Good:
+```py
+cache = {}
+cache[(x, y)] = value  # tuples are hashable
+```
+
+Bad:
+```py
+cache = {}
+cache[[x, y]] = value  # TypeError: unhashable type: 'list'
+```
+
+# Integer and float division behave differently
+`/` always produces a float in Python 3, while `//` performs floor division. Using the wrong one silently changes results rather than raising an error.
+
+Good:
+```py
+page_count = total_items // page_size  # integer floor division
+```
+
+Bad:
+```py
+page_count = total_items / page_size  # 3.5, not the integer you probably wanted
+```
+
+# Assigning to an instance attribute does not affect the class attribute
+Reading a mutable class attribute through `self` and then assigning to it creates a new instance attribute that shadows the class one, silently diverging from what other instances see.
+
+Good:
+```py
+class Counter:
+    def __init__(self):
+        self.count = 0  # explicit instance attribute
+    def inc(self):
+        self.count += 1
+```
+
+Bad:
+```py
+class Counter:
+    count = 0  # class attribute
+    def inc(self):
+        self.count += 1  # creates a new instance attribute, doesn't mutate the shared one
+```
+
+# String concatenation in a loop is quadratic
+Building a string with `+=` inside a loop is O(n^2) because each concatenation copies the whole string so far; use `str.join` on a list instead.
+
+Good:
+```py
+parts = [str(item) for item in items]
+result = ", ".join(parts)
+```
+
+Bad:
+```py
+result = ""
+for item in items:
+    result += str(item) + ", "  # re-copies the growing string every iteration
+```
+
+# bool is a subclass of int
+`True`/`False` are instances of `int` (`True == 1`, `False == 0`), so a boolean can silently pass a numeric type check or be used as a list index without error.
+
+Good:
+```py
+if isinstance(value, bool):
+    handle_bool(value)
+elif isinstance(value, int):
+    handle_int(value)
+```
+
+Bad:
+```py
+if isinstance(value, int):
+    handle_int(value)  # also matches True/False, probably not intended
+```
+
+# Default argument expressions are evaluated once, not per call
+A default argument value is computed a single time when the function is defined, not on every call — using something like `datetime.now()` as a default freezes it at import time.
+
+Good:
+```py
+def log_event(name, at=None):
+    at = at or datetime.now()
+```
+
+Bad:
+```py
+def log_event(name, at=datetime.now()):
+    ...  # 'at' is always the time the module was imported, never updates
+```
+
+# Avoid shell=True in subprocess calls with unsanitized input
+`subprocess.run(cmd, shell=True)` passes the command through a shell, so any user-controlled portion of `cmd` can inject arbitrary shell commands; pass an argument list with `shell=False` (the default) instead.
+
+Good:
+```py
+subprocess.run(["ls", "-la", user_dir], shell=False)
+```
+
+Bad:
+```py
+subprocess.run(f"ls -la {user_dir}", shell=True)  # user_dir="; rm -rf /" is catastrophic
+```
+
+# Avoid unpickling untrusted data
+`pickle.load`/`pickle.loads` can execute arbitrary code while deserializing a crafted payload; never unpickle data from an untrusted source (network input, user uploads).
+
+Good:
+```py
+data = json.loads(untrusted_bytes)  # plain data, no code execution
+```
+
+Bad:
+```py
+data = pickle.loads(untrusted_bytes)  # can execute arbitrary code embedded in the payload
+```
+
+# Avoid building SQL with string formatting
+Formatting user input directly into a SQL string (f-string, `%`, `.format`) enables SQL injection; use the database driver's parameterized query placeholders instead.
+
+Good:
+```py
+cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+```
+
+Bad:
+```py
+cursor.execute(f"SELECT * FROM users WHERE email = '{email}'")  # SQL injection
+```
+
+# Do not hardcode secrets in source code
+API keys, passwords, and tokens must be loaded from environment variables or a secrets manager, never written as literal strings in committed `.py` files.
+
+Good:
+```py
+api_key = os.environ["API_KEY"]
+```
+
+Bad:
+```py
+api_key = "sk_live_51Hxyz..."
+```
+
+# Avoid repeated attribute lookups in tight loops
+Looking up an attribute or module-level name (e.g. `self.config.value` or `math.sqrt`) inside a hot loop re-resolves it every iteration; bind it to a local variable once before the loop for CPython performance.
+
+Good:
+```py
+sqrt = math.sqrt
+results = [sqrt(x) for x in values]
+```
+
+Bad:
+```py
+results = [math.sqrt(x) for x in values]  # re-resolves the 'math' module attribute every iteration
+```
+
+# Prefer set/dict membership testing over list for large collections
+`in` on a `list` is O(n); for repeated membership checks against a large collection, use a `set` or `dict`, which are O(1) on average.
+
+Good:
+```py
+allowed_ids = set(fetch_allowed_ids())
+if user_id in allowed_ids: ...
+```
+
+Bad:
+```py
+allowed_ids = fetch_allowed_ids()  # a list
+if user_id in allowed_ids: ...  # O(n) scan on every check
+```
+
+# Avoid materializing an iterator into a list when only iterating once
+Wrapping a generator/iterator in `list(...)` just to loop over it once forces the whole sequence into memory upfront, defeating the purpose of lazy iteration.
+
+Good:
+```py
+for line in read_large_file(path):
+    process(line)
+```
+
+Bad:
+```py
+for line in list(read_large_file(path)):  # materializes the entire file in memory first
+    process(line)
+```
+
+# Avoid blocking I/O calls inside async functions
+Calling a synchronous, blocking function (e.g. `requests.get`, `time.sleep`, blocking file I/O) inside an `async def` blocks the entire event loop, stalling every other concurrent task.
+
+Good:
+```py
+async def fetch(url: str) -> str:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            return await resp.text()
+```
+
+Bad:
+```py
+async def fetch(url: str) -> str:
+    return requests.get(url).text  # blocks the whole event loop
+```

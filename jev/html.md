@@ -323,3 +323,153 @@ Bad:
 ```html
 <iframe src="map.html"></iframe>
 ```
+
+# Self-closing syntax on non-void elements doesn't self-close in HTML5
+Writing `<div />` in an HTML (not XHTML/JSX) document does not actually close the element; the parser treats it as an opening tag and everything after becomes its content until an explicit closing tag or an implicit close.
+
+Good:
+```html
+<div></div>
+```
+
+Bad:
+```html
+<div /><p>Next paragraph</p> <!-- the <p> ends up nested inside the div -->
+```
+
+# Block-level elements inside inline elements get corrected by the browser
+Nesting a block-level element (e.g. `<div>`) inside an inline element (e.g. `<span>` or `<a>`) is invalid HTML; browsers silently "fix" the markup, which can produce a different DOM structure than the source implies.
+
+Good:
+```html
+<div><a href="/x">Link text</a></div>
+```
+
+Bad:
+```html
+<a href="/x"><div>Link text</div></a> <!-- browser restructures this -->
+```
+
+# Boolean attributes are true if merely present, regardless of value
+Attributes like `disabled`, `checked`, and `required` are boolean in HTML — their presence means true no matter what string value (if any) is assigned; `disabled="false"` still disables the element.
+
+Good:
+```html
+<button>Enabled</button>
+<button disabled>Disabled</button>
+```
+
+Bad:
+```html
+<button disabled="false">Still disabled!</button>
+```
+
+# A missing DOCTYPE triggers quirks mode
+Without a `<!DOCTYPE html>` declaration, browsers render the page in "quirks mode," which changes box-model sizing and other layout behavior compared to standards mode.
+
+Good:
+```html
+<!DOCTYPE html>
+<html>...</html>
+```
+
+Bad:
+```html
+<html>...</html> <!-- no doctype: renders in quirks mode -->
+```
+
+# A blocking <script> pauses HTML parsing where it appears
+A `<script>` tag with no `defer`/`async` blocks HTML parsing at that point until the script downloads and executes, delaying everything below it — including elements the script might need to already exist.
+
+Good:
+```html
+<script src="app.js" defer></script>
+```
+
+Bad:
+```html
+<script src="app.js"></script> <!-- blocks parsing of everything after it -->
+```
+
+# Sandbox third-party iframe content
+An `<iframe>` embedding third-party or untrusted content should use the `sandbox` attribute to restrict what it can do (scripts, navigation, forms) unless the full capability set is genuinely required.
+
+Good:
+```html
+<iframe src="https://widget.example.com" sandbox="allow-scripts"></iframe>
+```
+
+Bad:
+```html
+<iframe src="https://widget.example.com"></iframe> <!-- no sandbox: full capabilities by default -->
+```
+
+# Avoid inline scripts, which weaken Content-Security-Policy
+An inline `<script>` block (or inline event handler) requires a CSP that allows `unsafe-inline`, defeating much of the protection a strict Content-Security-Policy provides against injected scripts.
+
+Good:
+```html
+<script src="/app.js"></script>
+```
+
+Bad:
+```html
+<script>
+  doSomething(); // inline script forces a weaker CSP
+</script>
+```
+
+# Escape user content injected into templates
+Any user-supplied value inserted into HTML must be escaped for the HTML context (or inserted via a safe DOM API like `textContent`); raw interpolation into markup is a cross-site-scripting vector.
+
+Good:
+```html
+<!-- using a templating engine that auto-escapes by default -->
+<p>{{ user.displayName }}</p>
+```
+
+Bad:
+```html
+<p><%= user.displayName %></p> <!-- if this engine doesn't auto-escape, it's XSS -->
+```
+
+# Associate form error messages with their input via aria-describedby
+A visible error message next to an input isn't programmatically associated with it unless referenced via `aria-describedby`; screen reader users may never hear the error otherwise.
+
+Good:
+```html
+<input id="email" aria-describedby="email-error">
+<span id="email-error">Enter a valid email address</span>
+```
+
+Bad:
+```html
+<input id="email">
+<span>Enter a valid email address</span> <!-- not linked to the input for assistive tech -->
+```
+
+# Do not disable pinch-zoom in the viewport meta tag
+Setting `user-scalable=no` or a fixed `maximum-scale` prevents users from zooming in, which is an accessibility requirement for people with low vision.
+
+Good:
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1">
+```
+
+Bad:
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+```
+
+# Ensure interactive elements meet a minimum touch target size
+A tappable element smaller than roughly 44x44 CSS pixels is hard to hit accurately on a touchscreen; pad small icon buttons out to a reasonable minimum touch area.
+
+Good:
+```html
+<button style="min-width: 44px; min-height: 44px;">×</button>
+```
+
+Bad:
+```html
+<button style="width: 16px; height: 16px; padding: 0;">×</button>
+```

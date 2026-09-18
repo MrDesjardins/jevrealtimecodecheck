@@ -199,3 +199,68 @@ Bad:
 ```json
 { "apiUrl": "CHANGEME" }
 ```
+
+# Integers larger than 2^53 lose precision when parsed as JS numbers
+JSON has no distinct integer type; a JS-based parser represents all numbers as IEEE-754 doubles, so integers beyond 2^53 (e.g. large database IDs) silently lose precision unless encoded as strings.
+
+Good:
+```json
+{ "id": "9223372036854775807" }
+```
+
+Bad:
+```json
+{ "id": 9223372036854775807 }
+```
+
+# Key order is not guaranteed to be preserved by every parser
+The JSON spec does not require object key order to be preserved; most modern parsers do preserve insertion order in practice, but code must not rely on it for correctness across all consumers.
+
+Good:
+```json
+{ "sortOrder": ["first", "second", "third"] }
+```
+
+Bad:
+```json
+{ "first": 1, "second": 2, "third": 3 } // relying on this object's key order to mean sequence
+```
+
+# An absent key and an explicit null are not the same to every consumer
+Some parsers/schemas distinguish "key not present" from "key present with value null"; treating them as interchangeable across systems can silently change behavior.
+
+Good:
+```json
+{ "nickname": "Ada" } // omit the key entirely when there is no value
+```
+
+Bad:
+```json
+{ "nickname": null } // some consumers treat this differently than an absent key
+```
+
+# Trailing newline presence can break byte-for-byte comparisons
+Whether a JSON file ends with a trailing newline is invisible when the file is parsed, but tooling that diffs or hashes the raw bytes (e.g. some CI checks) will treat it as a real difference.
+
+Good:
+```json
+// consistently configure your formatter to always (or never) add a trailing newline
+```
+
+Bad:
+```json
+// mixing files with and without a trailing newline in the same repo, causing noisy diffs
+```
+
+# Paginate large API response payloads
+An API returning an unbounded JSON array can produce very large responses as data grows; design for pagination (limit/offset or cursor) from the start rather than returning everything in one payload.
+
+Good:
+```json
+{ "items": [...], "nextCursor": "abc123", "hasMore": true }
+```
+
+Bad:
+```json
+{ "items": [ /* every row in the table, unbounded */ ] }
+```

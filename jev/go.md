@@ -473,3 +473,206 @@ Bad:
 v := cache[key]
 return v
 ```
+
+# Pre-1.22 loop variables are reused across iterations
+In Go versions before 1.22, a `for` loop's variable is a single variable reused every iteration; capturing it by reference in a goroutine or closure can observe the wrong (final) value unless explicitly copied.
+
+Good:
+```go
+for _, item := range items {
+	item := item // per-iteration copy, needed before Go 1.22
+	go process(item)
+}
+```
+
+Bad:
+```go
+for _, item := range items {
+	go process(item) // pre-1.22: every goroutine may see the same, final item
+}
+```
+
+# A nil map can be read but panics on write
+Reading from a nil map returns the zero value with no error, but writing to a nil map panics — the two operations behave very differently for the same uninitialized value.
+
+Good:
+```go
+m := make(map[string]int)
+m["key"] = 1 // safe
+```
+
+Bad:
+```go
+var m map[string]int
+m["key"] = 1 // panics: assignment to entry in nil map
+```
+
+# Appending to a slice can silently share the underlying array
+Slicing an existing array/slice shares the same underlying storage; appending within capacity mutates data another slice still references, producing surprising aliasing bugs.
+
+Good:
+```go
+b := make([]int, len(a))
+copy(b, a)
+b = append(b, 1) // b has its own backing array
+```
+
+Bad:
+```go
+b := a[:2]
+b = append(b, 99) // may overwrite a[2] if b still has spare capacity in a's array
+```
+
+# defer runs at function return, not at the end of a loop iteration
+`defer` inside a loop schedules every deferred call to run when the enclosing FUNCTION returns, not at the end of each iteration — resources pile up instead of being released promptly.
+
+Good:
+```go
+for _, path := range paths {
+	processFile(path) // opens and defers Close() inside its own function scope
+}
+```
+
+Bad:
+```go
+for _, path := range paths {
+	f, _ := os.Open(path)
+	defer f.Close() // all files stay open until the outer function returns
+```
+
+# Struct comparison with == requires every field to be comparable
+Two structs can be compared with `==` only if all their fields are comparable (no slices, maps, or functions); otherwise it's a compile error, and even when it compiles, struct equality is field-by-field, not semantic.
+
+Good:
+```go
+type Point struct{ X, Y int }
+if p1 == p2 { ... } // fine: both fields are comparable
+```
+
+Bad:
+```go
+type Config struct{ Tags []string }
+if c1 == c2 { ... } // compile error: slice is not comparable
+```
+
+# recover only works when called directly inside a deferred function
+`recover()` only stops a panic when it is called directly from within a `defer`red function on the panicking goroutine; calling it indirectly (from a function the defer calls) has no effect.
+
+Good:
+```go
+defer func() {
+	if r := recover(); r != nil {
+		log.Println("recovered:", r)
+	}
+}()
+```
+
+Bad:
+```go
+defer handleRecover() // recover() inside handleRecover does NOT catch the panic
+func handleRecover() { recover() }
+```
+
+# Avoid building SQL with string concatenation
+Concatenating user input directly into a SQL query string enables SQL injection; use parameterized placeholders (`?` or `$1`) via the `database/sql` package.
+
+Good:
+```go
+row := db.QueryRow("SELECT * FROM users WHERE email = ?", email)
+```
+
+Bad:
+```go
+row := db.QueryRow("SELECT * FROM users WHERE email = '" + email + "'")
+```
+
+# Avoid disabling TLS certificate verification
+Setting `InsecureSkipVerify: true` on a `tls.Config` disables certificate validation entirely, making the connection vulnerable to man-in-the-middle attacks; it should never ship in production code.
+
+Good:
+```go
+client := &http.Client{} // default transport verifies certificates
+```
+
+Bad:
+```go
+client := &http.Client{
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	},
+}
+```
+
+# Validate file paths built from user input
+A file path built by joining a base directory with user-supplied input must be checked (e.g. with `filepath.Clean` plus a prefix check) to prevent path traversal via `../` segments.
+
+Good:
+```go
+clean := filepath.Join(baseDir, filepath.Clean("/"+userFile))
+if !strings.HasPrefix(clean, baseDir) {
+	return errors.New("invalid path")
+}
+```
+
+Bad:
+```go
+path := filepath.Join(baseDir, userFile) // "../../etc/passwd" escapes baseDir unchecked
+```
+
+# Preallocate slices with a known capacity
+Appending to a slice with no initial capacity forces repeated reallocation and copying as it grows; when the final size is known or estimable, preallocate with `make([]T, 0, n)`.
+
+Good:
+```go
+results := make([]Item, 0, len(input))
+for _, x := range input {
+	results = append(results, transform(x))
+}
+```
+
+Bad:
+```go
+var results []Item
+for _, x := range input {
+	results = append(results, transform(x)) // repeated reallocation as it grows
+}
+```
+
+# Use strings.Builder instead of + for concatenation in loops
+Concatenating strings with `+` inside a loop allocates a new string on every iteration; `strings.Builder` (or `bytes.Buffer`) accumulates without the repeated copying.
+
+Good:
+```go
+var b strings.Builder
+for _, s := range parts {
+	b.WriteString(s)
+}
+result := b.String()
+```
+
+Bad:
+```go
+result := ""
+for _, s := range parts {
+	result += s // reallocates and copies the whole string every iteration
+}
+```
+
+# Prefer buffered I/O for repeated small writes
+Writing to a file or network connection in many small unbuffered calls incurs a syscall per write; wrap the writer in `bufio.Writer` and flush once at the end.
+
+Good:
+```go
+w := bufio.NewWriter(file)
+defer w.Flush()
+for _, line := range lines {
+	w.WriteString(line)
+}
+```
+
+Bad:
+```go
+for _, line := range lines {
+	file.WriteString(line) // one syscall per line
+}
+```

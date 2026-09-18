@@ -275,3 +275,130 @@ Bad:
 ```scss
 #main .card .card__title { font-weight: 600; }
 ```
+
+# !default does not override a variable already set to any value
+`!default` only assigns if the variable is completely undefined — if it was already set to an empty string, `false`, or `null` by an earlier `@use`/`@import`, `!default` will NOT override it either, which can be surprising.
+
+Good:
+```scss
+// Set intentional values before any !default declarations that might no-op against them
+$enable-shadows: true;
+```
+
+Bad:
+```scss
+$enable-shadows: false;
+// ... later ...
+$enable-shadows: true !default; // no-ops: false is still "set", not undefined
+```
+
+# @extend inside a media query only affects selectors in that same query
+A placeholder or selector `@extend`ed from within a media query block only pulls in rules for selectors that are ALSO within that same media query, not the base (unscoped) declaration of that selector.
+
+Good:
+```scss
+%btn-base { color: blue; }
+.btn { @extend %btn-base; }
+@media (min-width: 600px) {
+  .btn-wide { @extend %btn-base; }
+}
+```
+
+Bad:
+```scss
+%btn-base { color: blue; }
+@media (min-width: 600px) {
+  .btn-wide { @extend %btn-base; } // won't match the base %btn-base outside this query
+```
+
+# Sass map keys need quoting to avoid being parsed as color names or booleans
+An unquoted map key that happens to match a CSS color keyword (e.g. `red`, `tan`) or `true`/`false` is parsed as that special value, not as a plain string key.
+
+Good:
+```scss
+$sizes: ("small": 8px, "large": 24px);
+```
+
+Bad:
+```scss
+$sizes: (red: 8px, large: 24px); // "red" is parsed as the color, not a string key
+```
+
+# Nesting & with pseudo-classes depends on placement
+Where `&` appears relative to a pseudo-class selector changes the compiled output — `&:hover` versus `& :hover` compile to a completely different (attached vs. descendant) selector.
+
+Good:
+```scss
+.btn {
+  &:hover { color: blue; } // .btn:hover
+}
+```
+
+Bad:
+```scss
+.btn {
+  & :hover { color: blue; } // .btn :hover — any hovered descendant, not the button itself
+```
+
+# / for division is deprecated outside of specific contexts
+Using `/` for arithmetic division is deprecated in favor of `math.div()`; `/` still works unchanged for CSS shorthand like `font: 16px/1.5`, which can make it unclear whether a given `/` is arithmetic or shorthand syntax.
+
+Good:
+```scss
+@use "sass:math";
+$half: math.div($width, 2);
+```
+
+Bad:
+```scss
+$half: $width / 2; // deprecated arithmetic usage, easy to confuse with shorthand syntax
+```
+
+# Use shared spacing-scale variables instead of literal values
+Spacing values used in Sass should reference a shared scale/map variable, not one-off literals, so the compiled CSS stays visually consistent across components.
+
+Good:
+```scss
+$space-2: 8px;
+.card { padding: $space-2 * 2; }
+```
+
+Bad:
+```scss
+.card { padding: 15px; } // arbitrary value, not from the shared scale
+```
+
+# Avoid @extending unrelated selectors just to share a few properties
+@extending a placeholder from many unrelated selectors bloats the compiled CSS with a long, hard-to-read combined selector list; a mixin (which duplicates only the needed declarations) is often clearer for loosely related cases.
+
+Good:
+```scss
+@mixin card-shadow {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.card { @include card-shadow; }
+.tooltip { @include card-shadow; }
+```
+
+Bad:
+```scss
+%shadow { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.card, .tooltip, .modal, .dropdown, .popover { @extend %shadow; } // huge combined selector in output
+```
+
+# Keep generated selector specificity predictable for overrides
+Deep nesting compiles to high-specificity selectors that are hard for consumers (or later code) to override without `!important`; keep nesting shallow so overriding a component's styles stays straightforward.
+
+Good:
+```scss
+.card__title {
+  font-weight: 600;
+}
+```
+
+Bad:
+```scss
+.page .content .card .header .card__title {
+  font-weight: 600; // very high specificity, hard to override later
+}
+```

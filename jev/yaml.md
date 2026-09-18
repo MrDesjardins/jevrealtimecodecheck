@@ -235,3 +235,100 @@ steps:
   # - run: npm run old-step
   # - run: npm run another-old-step
 ```
+
+# Unquoted yes/no/on/off/null parse as their special types
+YAML 1.1 treats unquoted `yes`, `no`, `on`, `off`, `null`, and similar words as booleans or null, not strings — known as the "Norway problem" (`NO` the country code becomes `false`).
+
+Good:
+```yaml
+country_code: "NO"
+```
+
+Bad:
+```yaml
+country_code: NO # parses as boolean false, not the string "NO"
+```
+
+# A leading zero on an unquoted number can be parsed as octal
+Some YAML parsers interpret an unquoted number with a leading zero (e.g. `0755`) as octal, silently producing a different decimal value than expected.
+
+Good:
+```yaml
+file_mode: "0755"
+```
+
+Bad:
+```yaml
+file_mode: 0755 # some parsers read this as octal 493, not the string "0755"
+```
+
+# Merge key (<<:) resolution varies by parser
+The `<<:` merge key for combining mappings is a YAML 1.1 convention, not part of the core spec; its exact override/precedence behavior can differ between parser implementations and versions.
+
+Good:
+```yaml
+# Prefer explicit duplication or a templating step over relying on <<: semantics
+prod:
+  timeout: 30
+  retries: 3
+```
+
+Bad:
+```yaml
+defaults: &defaults
+  timeout: 30
+prod:
+  <<: *defaults
+  timeout: 60 # override order isn't guaranteed identical across all parsers
+```
+
+# A duplicate anchor name silently overwrites the earlier one
+Defining the same anchor name (`&name`) twice in one document is not an error in most parsers; the later definition silently wins, and any alias resolves to the last one only.
+
+Good:
+```yaml
+base: &base_config
+  timeout: 30
+other: &other_config
+  retries: 3
+```
+
+Bad:
+```yaml
+base: &config
+  timeout: 30
+other: &config # same anchor name reused, first definition is lost
+  retries: 3
+```
+
+# Flow-style collections need different quoting/comma rules than block style
+Inline (flow) style `{a: 1, b: 2}` / `[1, 2, 3]` requires commas and different escaping than block style; copying a value between the two styles without adjusting syntax is a common source of parse errors.
+
+Good:
+```yaml
+ports: [80, 443, 8080]
+```
+
+Bad:
+```yaml
+ports:
+  80
+  443 # missing the block-style "- " list markers, invalid YAML
+```
+
+# Avoid deeply nested anchor/alias expansion (a YAML bomb)
+A small number of anchors that reference each other in a nested chain can expand exponentially when parsed (the "billion laughs" pattern), causing excessive memory/CPU use — a real denial-of-service vector for YAML accepted from untrusted sources.
+
+Good:
+```yaml
+# Keep anchor chains shallow, and never parse untrusted YAML without a parser-level expansion limit.
+item: &item
+  value: 1
+```
+
+Bad:
+```yaml
+a: &a [1,1,1,1,1,1,1,1,1]
+b: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]
+c: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b] # each level multiplies the expanded size by ~9x
+```

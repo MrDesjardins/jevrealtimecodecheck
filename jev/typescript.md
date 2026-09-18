@@ -1998,3 +1998,239 @@ Bad:
 const result = computeTotal(items);
 return result;
 ```
+
+# forEach does not await async callbacks
+`Array.prototype.forEach` does not wait for async callbacks; the loop finishes immediately while the async work is still pending.
+
+Good:
+```ts
+for (const id of ids) {
+  await process(id);
+}
+```
+
+Bad:
+```ts
+ids.forEach(async (id) => {
+  await process(id); // forEach doesn't wait for this
+});
+console.log("done"); // logs before processing finishes
+```
+
+# Array.sort defaults to lexicographic ordering
+`Array.prototype.sort()` with no comparator converts elements to strings, so numbers sort lexicographically (e.g. 10 before 2) unless a comparator is supplied.
+
+Good:
+```ts
+numbers.sort((a, b) => a - b);
+```
+
+Bad:
+```ts
+numbers.sort(); // [10, 2, 1] instead of [1, 2, 10]
+```
+
+# NaN must be checked with Number.isNaN
+`isNaN()` coerces its argument before checking, so non-numeric values that aren't actually NaN can report true. Use `Number.isNaN()`, which does not coerce.
+
+Good:
+```ts
+if (Number.isNaN(value)) { ... }
+```
+
+Bad:
+```ts
+if (isNaN(value)) { ... } // isNaN("foo") is also true
+```
+
+# Object and array equality checks compare references, not contents
+`===` (and `==`) on objects/arrays compares identity, not structural equality — two objects with identical contents are never `===` unless they're the same reference.
+
+Good:
+```ts
+import isEqual from "lodash/isEqual";
+if (isEqual(a, b)) { ... }
+```
+
+Bad:
+```ts
+if (a === b) { ... } // false even when a and b have identical contents
+```
+
+# Spreading a very large array into function arguments can overflow the stack
+`fn(...hugeArray)` passes every element as a separate argument; for large arrays this can exceed the engine's argument/stack limits.
+
+Good:
+```ts
+const max = hugeArray.reduce((m, x) => Math.max(m, x), -Infinity);
+```
+
+Bad:
+```ts
+const max = Math.max(...hugeArray); // throws for large enough arrays
+```
+
+# Destructuring a possibly-undefined value throws
+Destructuring `undefined` or `null` throws a TypeError; a default only applies when the whole value is exactly `undefined`, not when a nested property is missing.
+
+Good:
+```ts
+const { x } = maybeUndefined ?? {};
+```
+
+Bad:
+```ts
+const { x } = maybeUndefined; // throws if maybeUndefined is undefined
+```
+
+# Promise.all rejects entirely on the first failure
+`Promise.all` rejects as soon as any input promise rejects, discarding the results of promises that would have succeeded. Use `Promise.allSettled` when partial failures are acceptable.
+
+Good:
+```ts
+const results = await Promise.allSettled(tasks);
+```
+
+Bad:
+```ts
+const results = await Promise.all(tasks); // one failure loses every other result
+```
+
+# Array holes are skipped by forEach/map but not by for loops
+A sparse array (e.g. from `new Array(5)` or a deleted index) has holes that `forEach`/`map`/`filter` skip entirely, but a plain `for` loop still visits them as `undefined`.
+
+Good:
+```ts
+const arr = Array.from({ length: 5 }, () => 0);
+```
+
+Bad:
+```ts
+const arr = new Array(5);
+arr.forEach((x) => console.log(x)); // never runs, array is all holes
+```
+
+# Avoid path traversal from unsanitized file paths
+A file path built by concatenating user input must be validated/resolved and checked against an allowed base directory, or an attacker can escape it with `../` segments.
+
+Good:
+```ts
+const safePath = path.resolve(baseDir, userFile);
+if (!safePath.startsWith(baseDir)) throw new Error("Invalid path");
+```
+
+Bad:
+```ts
+const filePath = path.join(baseDir, req.query.file); // "../../etc/passwd" escapes baseDir
+```
+
+# Avoid prototype pollution via unchecked object merges
+Recursively merging an untrusted object (e.g. from request JSON) into another without filtering `__proto__`/`constructor`/`prototype` keys can pollute `Object.prototype` for the whole process.
+
+Good:
+```ts
+function safeMerge(target: object, source: Record<string, unknown>) {
+  for (const key of Object.keys(source)) {
+    if (key === "__proto__" || key === "constructor") continue;
+    (target as any)[key] = source[key];
+  }
+}
+```
+
+Bad:
+```ts
+function merge(target: any, source: any) {
+  for (const key in source) target[key] = source[key]; // "__proto__" pollutes globally
+}
+```
+
+# Avoid ReDoS from user-controlled regular expressions
+A regular expression built from or matched against user-controlled input can have catastrophic backtracking on crafted input, hanging the process; validate/bound input length or use a safe regex engine.
+
+Good:
+```ts
+if (input.length > 200) throw new Error("Input too long");
+const safe = /^[a-z0-9-]{1,50}$/i;
+if (!safe.test(input)) { ... }
+```
+
+Bad:
+```ts
+const pattern = new RegExp(`^(${userSuppliedFragment})+$`); // attacker-controlled pattern can cause catastrophic backtracking
+```
+
+# Avoid insecure deserialization of untrusted data
+Deserializing untrusted data with a mechanism that can execute code (a custom `JSON.parse` reviver invoking `eval`-like behavior, or a serialization library that reconstructs class instances) can lead to remote code execution.
+
+Good:
+```ts
+const data = JSON.parse(untrustedText); // plain data, no code execution
+```
+
+Bad:
+```ts
+const data = JSON.parse(untrustedText, (key, value) =>
+  typeof value === "string" && value.startsWith("fn:") ? eval(value.slice(3)) : value
+);
+```
+
+# Avoid importing an entire library when a subpath import suffices
+Importing a whole library's default export just to use one function pulls the entire bundle into your output; import the specific submodule/function when the library supports it.
+
+Good:
+```ts
+import debounce from "lodash/debounce";
+```
+
+Bad:
+```ts
+import _ from "lodash";
+_.debounce(fn, 300); // bundles all of lodash for one function
+```
+
+# Debounce or throttle expensive event handlers
+A handler attached to a high-frequency event (scroll, resize, input) that does expensive work on every call should be debounced or throttled, or it can visibly degrade UI responsiveness.
+
+Good:
+```ts
+window.addEventListener("resize", debounce(recomputeLayout, 150));
+```
+
+Bad:
+```ts
+window.addEventListener("resize", recomputeLayout); // runs on every single resize tick
+```
+
+# Avoid recomputing derived data on every call instead of caching
+A pure computation derived from unchanged inputs (e.g. building a lookup index from a large list) should be cached/memoized rather than recomputed from scratch on every invocation.
+
+Good:
+```ts
+const indexCache = new Map<string, Map<string, Item>>();
+function getIndex(items: Item[], key: string): Map<string, Item> {
+  if (!indexCache.has(key)) indexCache.set(key, buildIndex(items, key));
+  return indexCache.get(key)!;
+}
+```
+
+Bad:
+```ts
+function findItem(items: Item[], id: string): Item | undefined {
+  const index = buildIndex(items, "id"); // rebuilt from scratch on every single lookup
+  return index.get(id);
+}
+```
+
+# Avoid deep-cloning large objects when a shallow copy suffices
+A deep clone walks and copies every nested value; when only the top level needs to change (immutable update pattern), a shallow copy/spread is far cheaper and usually sufficient.
+
+Good:
+```ts
+const updated = { ...largeConfig, timeout: 5000 };
+```
+
+Bad:
+```ts
+const updated = structuredClone(largeConfig);
+updated.timeout = 5000; // deep-clones a large nested object just to change one field
+```

@@ -395,3 +395,72 @@ Bad:
 * Second
 + Third
 ```
+
+# Setext-style headings are easy to miss when scanning source
+A line underlined with `===` or `---` is also a heading (level 1 or 2 respectively), not just `#`-prefixed lines — easy to overlook when searching a document for headings by eye or with a `^#` grep.
+
+Good:
+```md
+# Title
+
+Section
+-------
+```
+
+Bad:
+```md
+Title
+=====
+
+Section
+-------
+```
+
+# Four-space indentation is parsed as a code block, not a nested list
+A line indented 4+ spaces starts an indented code block in standard Markdown; a list item meant to be nested under a bullet needs the right (often 2-space) indentation for that renderer, not a full tab-stop.
+
+Good:
+```md
+- Item
+  - Nested item (2-space indent)
+```
+
+Bad:
+```md
+- Item
+    - Meant to be nested, but 4 spaces renders as a code block instead
+```
+
+# A reference-style link with no matching definition renders as plain text
+`[text][ref]` requires a corresponding `[ref]: url` definition somewhere in the document; if the definition is missing or misspelled, most renderers silently show the literal bracket text instead of a link.
+
+Good:
+```md
+See the [API reference][api-ref].
+
+[api-ref]: https://docs.example.com/api
+```
+
+Bad:
+```md
+See the [API reference][api-ref].
+<!-- no [api-ref]: ... definition anywhere in the document -->
+```
+
+# A list right after a paragraph with no blank line may not render as a list
+Some Markdown renderers require a blank line between a paragraph and a following list for the list to be recognized as a list rather than continuing the paragraph's text.
+
+Good:
+```md
+Steps to install:
+
+- Step one
+- Step two
+```
+
+Bad:
+```md
+Steps to install:
+- Step one
+- Step two
+```

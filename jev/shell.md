@@ -304,3 +304,139 @@ Bad:
 env=$1
 deploy "$env"
 ```
+
+# Unquoted variables with spaces are word-split
+An unquoted variable expansion is subject to word splitting and globbing — a value containing spaces becomes multiple separate arguments instead of one.
+
+Good:
+```bash
+cp "$source_file" "$dest_dir"
+```
+
+Bad:
+```bash
+cp $source_file $dest_dir # a space in either path splits it into extra arguments
+```
+
+# $? only reflects the immediately preceding command
+`$?` holds the exit status of the last command run — any command in between, including something like `echo`, overwrites it before you get a chance to check the one you actually cared about.
+
+Good:
+```bash
+run_migration
+status=$?
+if [[ $status -ne 0 ]]; then exit 1; fi
+```
+
+Bad:
+```bash
+run_migration
+echo "migration attempted"
+if [[ $? -ne 0 ]]; then exit 1; fi # $? now reflects echo, not run_migration
+```
+
+# A command in a pipeline runs in a subshell
+Each stage of a pipeline runs in its own subshell; variable assignments made inside a piped command do not persist in the parent shell after the pipeline finishes.
+
+Good:
+```bash
+count=$(grep -c pattern file.txt)
+```
+
+Bad:
+```bash
+grep pattern file.txt | while read -r line; do count=$((count+1)); done
+echo "$count" # always empty/0: the while loop ran in a subshell
+```
+
+# An empty or unset variable in a bare [ ] test causes a syntax error
+`[ $var = x ]` with an unquoted, empty/unset `$var` expands to `[ = x ]`, which is a syntax error rather than a false comparison.
+
+Good:
+```bash
+if [[ "$var" = "x" ]]; then ...; fi
+```
+
+Bad:
+```bash
+if [ $var = x ]; then ...; fi # errors out if $var is unset or empty
+```
+
+# set -e does not abort inside an if/while condition or a non-last pipeline stage
+`set -e` does not stop the script when a failing command is used as part of an `if`/`while` condition, or when it's anything but the last command in a pipeline — those failures are expected to be checked, not fatal.
+
+Good:
+```bash
+if ! run_step; then
+  echo "step failed" >&2
+  exit 1
+fi
+```
+
+Bad:
+```bash
+set -e
+if run_step; then
+  echo "ok"
+fi # run_step failing here does NOT trigger set -e, by design — but easy to forget
+```
+
+# Avoid constructing commands from unsanitized user input
+Interpolating user-controlled input directly into a command string (even without `eval`) can allow argument or command injection if the input contains shell metacharacters and is not properly quoted/validated.
+
+Good:
+```bash
+read -r branch
+if [[ "$branch" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+  git checkout "$branch"
+fi
+```
+
+Bad:
+```bash
+read -r branch
+git checkout $branch # unquoted and unvalidated: "; rm -rf ." is a valid "branch"
+```
+
+# Do not run scripts as root without necessity
+A script should not require or assume root privileges unless the specific operations genuinely need them; running everything as root turns any bug or injected command into a full-system compromise.
+
+Good:
+```bash
+sudo install -m 755 binary /usr/local/bin/  # only the one privileged step uses sudo
+```
+
+Bad:
+```bash
+# entire script run via: sudo ./script.sh
+```
+
+# Verify checksums before executing downloaded scripts
+Piping a downloaded script directly into a shell (`curl ... | bash`) executes it without any verification; download it first, check its checksum/signature, then run it.
+
+Good:
+```bash
+curl -fsSL -o install.sh https://example.com/install.sh
+echo "expectedsha256  install.sh" | sha256sum -c -
+bash install.sh
+```
+
+Bad:
+```bash
+curl -fsSL https://example.com/install.sh | bash # executes whatever the server returns, unverified
+```
+
+# Avoid spawning a subprocess per loop iteration when one batched call suffices
+Invoking an external command inside a loop pays process-startup overhead every iteration; many tools accept a batch of arguments/files in one invocation instead.
+
+Good:
+```bash
+grep -l pattern -- "${files[@]}"
+```
+
+Bad:
+```bash
+for f in "${files[@]}"; do
+  grep -l pattern "$f" # spawns a new grep process per file
+done
+```
