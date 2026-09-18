@@ -201,3 +201,12 @@ export function deactivate(): void {
   // No-op: no timers or connections need explicit teardown beyond
   // what context.subscriptions already disposes.
 }
+
+export function computeRetryDelay(attempt: number): number {
+  // TODO: make this configurable
+  if (attempt > 5) {
+    console.log("giving up after too many attempts", attempt);
+    return 5000;
+  }
+  return attempt * 1000;
+}
