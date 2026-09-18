@@ -40,11 +40,31 @@ violations introduced by your change are flagged.
   top and expanded; Compliant/Not applicable collapsed at the bottom,
   since with hundreds of rules those are mostly noise, not signal), sorted
   within Violations by severity.
-- Debounced analysis on save and on every edit (typing, paste, or
-  programmatic changes), throttled to at most once per second.
 - Works offline too: with no API key configured, a labeled **OFFLINE
   MOCK** mode runs simple heuristics instead of a live call, so you can
   still see the UI flow.
+
+## Three ways it runs
+
+1. **Automatically, whenever code changes settle** — opt-in
+   (`jevCodeCheck.autoAnalyzeOnSave`, off by default with an explicit
+   consent dialog). Debounced to fire once edits pause for ~1s, so it
+   naturally fires when an LLM agent finishes a burst of edits, not
+   mid-stream. This is backed by a filesystem watcher, not just editor
+   events — an external tool (an AI coding agent, a formatter, anything)
+   writing files directly to disk is picked up even if that file was never
+   opened in an editor tab, which a plain "on save" hook would miss.
+2. **Manually** — **Jev: Analyze changes** command, or the sync icon in
+   the sidebar's title bar.
+3. **In CI, on a pull request** — `scripts/review-pr.ts` runs the identical
+   rule-matching + Jev pipeline against a PR's committed diff (base...HEAD)
+   and posts a GitHub review comment on each violation it can localize to a
+   file/line. See `.github/workflows/jev-review.yml`. It reuses the same
+   `src/` modules as the editor extension — no separate implementation to
+   keep in sync. Requires the `TYPESAFE_API_KEY` secret; re-runs on the
+   same PR don't repost a comment already there for the same rule. Skips
+   fork PRs (no `pull_request_target`, to avoid running PR code with
+   base-repo secrets).
 
 ## Why "rules as data"
 

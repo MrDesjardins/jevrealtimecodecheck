@@ -75,7 +75,7 @@
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "description": "Opt-in: automatically analyze changes as you edit (typing, paste, or any other change) and on save. When enabled, your changed code and surrounding file context are sent to TypeSafe's Jev API, throttled to at most once per second."
+          "description": "Opt-in: automatically analyze on any tracked-file change in the workspace — typing, paste, save, or a file written directly to disk by an external tool (e.g. an AI coding agent that isn't editing through an open tab). When enabled, your changed code and surrounding file context are sent to TypeSafe's Jev API, throttled to at most once per second."
         },
         "jevCodeCheck.debounceMs": {
           "type": "number",

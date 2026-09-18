@@ -74,3 +74,56 @@ export async function collectGitDiff(cwd: string): Promise<GitDiffResult> {
     untrackedFiles,
   };
 }
+
+/**
+ * Collects the diff introduced by HEAD since it diverged from `baseRef`
+ * (three-dot diff against the merge-base), i.e. exactly what a GitHub PR's
+ * "Files changed" tab shows. This is a different question than
+ * collectGitDiff's "working tree vs HEAD" — used for CI/PR review, where
+ * there is no uncommitted working-tree state, only a committed branch to
+ * compare against its base. `baseRef` must already be resolvable locally
+ * (e.g. fetched as `origin/main` before calling this).
+ */
+export async function collectGitDiffAgainstRef(
+  cwd: string,
+  baseRef: string
+): Promise<GitDiffResult> {
+  try {
+    await runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
+  } catch {
+    return {
+      kind: "unsupported",
+      diff: "",
+      changedFiles: [],
+      reason: "This folder is not a Git repository.",
+    };
+  }
+
+  try {
+    await runGit(cwd, ["rev-parse", "--verify", baseRef]);
+  } catch {
+    return {
+      kind: "unsupported",
+      diff: "",
+      changedFiles: [],
+      reason: `Base ref "${baseRef}" is not resolvable locally. Fetch it first (e.g. "git fetch origin ${baseRef}").`,
+    };
+  }
+
+  const range = `${baseRef}...HEAD`;
+  const [diff, nameOnly] = await Promise.all([
+    runGit(cwd, ["diff", range, "--", "."]),
+    runGit(cwd, ["diff", range, "--name-only", "--", "."]),
+  ]);
+
+  const changedFiles = nameOnly
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (!diff.trim()) {
+    return { kind: "empty", diff: "", changedFiles: [] };
+  }
+
+  return { kind: "diff", diff, changedFiles };
+}

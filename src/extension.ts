@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { AnalysisController, AnalysisStatus } from "./analysisController";
 import { RulesTreeProvider } from "./sidebarProvider";
 import { setApiKey, clearApiKey } from "./credentials";
-import { isInsideDir, isRuleFilePath } from "./pathUtils";
+import { isInsideDir, isNoisyPath, isRuleFilePath } from "./pathUtils";
 import { EXAMPLE_RULE_CONTENT, EXAMPLE_RULE_FILE_NAME } from "./exampleRule";
 
 function getWorkspaceRoot(): string | undefined {
@@ -160,7 +160,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const current = cfg.get<boolean>("autoAnalyzeOnSave", false);
       if (!current) {
         const choice = await vscode.window.showInformationMessage(
-          "Enabling automatic analysis will send your changed code (diff) and surrounding file context to TypeSafe's Jev API as you edit (typing, paste, or any other change) and on save, for this workspace. Requests are throttled to at most once per second. Enable?",
+          "Enabling automatic analysis will send your changed code (diff) and surrounding file context to TypeSafe's Jev API whenever tracked files in this workspace change — typing, paste, save, or a file written directly to disk by an external tool (an AI coding agent, a formatter, etc.), not just edits made through an open editor tab. Requests are throttled to at most once per second. Enable?",
           { modal: true },
           "Enable"
         );
@@ -179,47 +179,49 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Shared by every trigger source below (save, in-editor typing, and raw
+  // filesystem changes) so "is this a rules file / is auto-analyze on for
+  // this path" is decided once, consistently.
+  function handleFileTouched(fileUri: vscode.Uri): void {
+    if (fileUri.scheme !== "file" || isNoisyPath(fileUri.fsPath)) return;
+    const root = getWorkspaceRoot();
+    if (!root) return;
+
+    const filePath = fileUri.fsPath;
+    if (isRuleFilePath(filePath, getRulesDirAbsPath(root))) {
+      // Rules changed: always reanalyze, independent of the auto-analyze setting.
+      scheduleDebouncedAnalyze();
+      return;
+    }
+
+    const cfg = vscode.workspace.getConfiguration("jevCodeCheck", fileUri);
+    const autoEnabled = cfg.get<boolean>("autoAnalyzeOnSave", false);
+    if (autoEnabled && isInsideDir(filePath, root)) {
+      scheduleDebouncedAnalyze();
+    }
+  }
+
+  // Catches writes that never go through an open VS Code editor at all — an
+  // external agent (a CLI coding tool, including this one, writing files
+  // directly to disk) doesn't fire onDidChangeTextDocument unless the file
+  // happens to already be open in a tab. This is what actually satisfies
+  // "run whenever an LLM finishes generating code," not just "whenever I
+  // finish typing in an open editor." Shares scheduleDebouncedAnalyze (and
+  // its 1s floor) with every other trigger below.
+  const fsWatcher = vscode.workspace.createFileSystemWatcher("**/*");
+
   context.subscriptions.push(
-    vscode.workspace.onDidSaveTextDocument((doc) => {
-      const root = getWorkspaceRoot();
-      if (!root) return;
+    fsWatcher,
+    fsWatcher.onDidChange((uri) => handleFileTouched(uri)),
+    fsWatcher.onDidCreate((uri) => handleFileTouched(uri)),
 
-      const savedPath = doc.uri.fsPath;
-      if (isRuleFilePath(savedPath, getRulesDirAbsPath(root))) {
-        // Rules changed: always reanalyze, independent of the auto-analyze setting.
-        scheduleDebouncedAnalyze();
-        return;
-      }
+    vscode.workspace.onDidSaveTextDocument((doc) => handleFileTouched(doc.uri)),
 
-      const cfg = vscode.workspace.getConfiguration("jevCodeCheck", doc.uri);
-      const autoEnabled = cfg.get<boolean>("autoAnalyzeOnSave", false);
-      if (autoEnabled && isInsideDir(savedPath, root)) {
-        scheduleDebouncedAnalyze();
-      }
-    }),
-
-    // Covers typing, paste, and programmatic/LLM edits alike — VS Code
-    // reports them all through the same change event. scheduleDebouncedAnalyze
-    // shares one timer with the save handler above and is floored at 1s, so
-    // this can't fire more than once per second regardless of edit source.
+    // Covers typing, paste, and edits an extension makes to an ALREADY-OPEN
+    // editor tab (e.g. Copilot/Cursor's own in-editor agent).
     vscode.workspace.onDidChangeTextDocument((e) => {
-      if (e.contentChanges.length === 0 || e.document.uri.scheme !== "file") {
-        return;
-      }
-      const root = getWorkspaceRoot();
-      if (!root) return;
-
-      const changedPath = e.document.uri.fsPath;
-      if (isRuleFilePath(changedPath, getRulesDirAbsPath(root))) {
-        scheduleDebouncedAnalyze();
-        return;
-      }
-
-      const cfg = vscode.workspace.getConfiguration("jevCodeCheck", e.document.uri);
-      const autoEnabled = cfg.get<boolean>("autoAnalyzeOnSave", false);
-      if (autoEnabled && isInsideDir(changedPath, root)) {
-        scheduleDebouncedAnalyze();
-      }
+      if (e.contentChanges.length === 0) return;
+      handleFileTouched(e.document.uri);
     })
   );
 }
