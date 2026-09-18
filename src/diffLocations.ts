@@ -36,14 +36,24 @@ export interface DiffBlock {
 }
 
 /**
- * Splits a unified diff into contiguous added-line blocks (runs of `+` lines
- * with no blank line, removal, or context line in between), each carrying
- * the real starting line number from the diff itself. This gives Jev
- * finer-grained candidates to localize a violation to than "the file's first
- * hunk" — important when a whole file is rewritten as one giant hunk, which
+ * Splits a unified diff into small added-line blocks, each carrying the real
+ * starting line number from the diff itself. This gives Jev finer-grained
+ * candidates to localize a violation to than "the file's first hunk" —
+ * important when a whole file is rewritten as one giant hunk, which
  * otherwise always resolves to line 1 regardless of where the violation
  * actually is. Line numbers are still never invented by the model: they're
  * read directly off the hunk headers and running line count.
+ *
+ * A run of added lines is first split on blank lines / removals / context
+ * lines (paragraph-like boundaries), same as before. But a long run with NO
+ * internal blank line — e.g. one 8-line function body added in one go — is
+ * then further chunked into groups of at most `maxLinesPerBlock` lines
+ * (default: 1, i.e. one candidate location per added line). Without this,
+ * an entire multi-line function collapses into a single block, so every
+ * violation inside it resolves to the same (first) line regardless of which
+ * statement it's actually about — confirmed in practice: a TODO on one line
+ * and a console.log two lines later both resolved to the function's first
+ * line until this was added.
  *
  * Limiting is done PER FILE (`maxBlocksPerFile`), not with one global cap —
  * a single global cap taken in file order silently dropped every candidate
@@ -52,19 +62,31 @@ export interface DiffBlock {
  * clickable). `maxTotalBlocks` is just a hard safety ceiling for pathological
  * diffs, not the primary limiting mechanism.
  */
-export function parseDiffBlocks(diff: string, maxBlocksPerFile = 8, maxTotalBlocks = 400): DiffBlock[] {
+export function parseDiffBlocks(
+  diff: string,
+  maxBlocksPerFile = 40,
+  maxTotalBlocks = 600,
+  maxLinesPerBlock = 1
+): DiffBlock[] {
   const blocks: DiffBlock[] = [];
   let currentFile: string | null = null;
   let newLineNo = 0;
-  let current: { file: string; startLine: number; lines: string[] } | null = null;
+  let current: { file: string; lines: { lineNo: number; text: string }[] } | null = null;
 
   const finalize = () => {
     if (current && current.lines.length > 0) {
-      blocks.push({
-        file: current.file,
-        startLine: current.startLine,
-        preview: current.lines.join(" ").trim().slice(0, 100),
-      });
+      for (let i = 0; i < current.lines.length; i += maxLinesPerBlock) {
+        const chunk = current.lines.slice(i, i + maxLinesPerBlock);
+        blocks.push({
+          file: current.file,
+          startLine: chunk[0].lineNo,
+          preview: chunk
+            .map((l) => l.text)
+            .join(" ")
+            .trim()
+            .slice(0, 100),
+        });
+      }
     }
     current = null;
   };
@@ -98,9 +120,9 @@ export function parseDiffBlocks(diff: string, maxBlocksPerFile = 8, maxTotalBloc
       if (content.trim() === "") {
         finalize();
       } else if (current) {
-        current.lines.push(content.trim());
+        current.lines.push({ lineNo: newLineNo, text: content.trim() });
       } else {
-        current = { file: currentFile, startLine: newLineNo, lines: [content.trim()] };
+        current = { file: currentFile, lines: [{ lineNo: newLineNo, text: content.trim() }] };
       }
       newLineNo++;
     } else if (line.startsWith("-")) {
