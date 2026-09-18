@@ -103,6 +103,38 @@ test("parseDiffBlocks caps blocks per file", () => {
   assert.equal(blocks.length, 10);
 });
 
+test("parseDiffBlocks splits a long contiguous addition with no internal blank lines into multiple blocks", () => {
+  // Regression: a PR added an 8-line function body in one go, no blank
+  // lines inside it. Every violation inside that function resolved to the
+  // same first line, because the whole function was one block.
+  const diff = [
+    "diff --git a/playground.ts b/playground.ts",
+    "--- a/playground.ts",
+    "+++ b/playground.ts",
+    "@@ -201,3 +201,12 @@",
+    " }",
+    "+",
+    "+export function computeRetryDelay(attempt: number): number {",
+    "+  // TODO: make this configurable",
+    "+  if (attempt > 5) {",
+    "+    console.log(\"giving up after too many attempts\", attempt);",
+    "+    return 5000;",
+    "+  }",
+    "+  return attempt * 1000;",
+    "+}",
+  ].join("\n");
+
+  const blocks = parseDiffBlocks(diff);
+  assert.ok(blocks.length > 1, `expected more than one block, got ${blocks.length}`);
+
+  const todoBlock = blocks.find((b) => b.preview.includes("TODO"));
+  const consoleBlock = blocks.find((b) => b.preview.includes("console.log"));
+  assert.ok(todoBlock);
+  assert.ok(consoleBlock);
+  // The two violations must NOT collapse onto the same line.
+  assert.notEqual(todoBlock!.startLine, consoleBlock!.startLine);
+});
+
 test("parseDiffBlocks guarantees every changed file gets representation, not just the first ones in the diff", () => {
   // Regression test: a global cap taken in file order silently dropped every
   // candidate for later files, so violations in those files could never be
