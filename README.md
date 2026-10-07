@@ -1,101 +1,152 @@
-# Jev Realtime Code Check
+# Jev Code Check
 
-A VS Code / Cursor extension that checks your local Git changes against
-your own coding rules, using [TypeSafe AI](https://docs.typesafe.ai)'s
-**Jev** model. It watches your diff, not your whole repo — only the rules
-relevant to the file types you actually touched get sent, and only *new*
-violations introduced by your change are flagged.
+Checks your code changes against your own coding rules, written as plain
+Markdown, using [TypeSafe AI](https://docs.typesafe.ai)'s **Jev** model.
+It looks at your diff, not your whole repo. Only the rules for the file
+types you actually touched are sent, and only *new* violations introduced
+by your change are flagged.
+
+One engine (`src/`), four places to run it:
+
+| | Where | Checks | Results go to |
+|---|---|---|---|
+| 1 | **Your editor** (VS Code / Cursor) | Uncommitted changes, on demand or as you edit | Sidebar + Problems panel |
+| 2 | **Command line** | Uncommitted changes, or a branch vs its base | Terminal (JSON) |
+| 3 | **CI, on a pull request** | The PR's diff | Inline PR review comments |
+| 4 | **A coding agent**, via `AGENTS.md` | The agent's own uncommitted changes | The agent, which fixes them |
 
 📺 **Demo video:** https://youtu.be/goVDTUd7-J0
 
-## What it does
+## How it works
 
 - Reads a directory of Markdown rule files (default `jev/`), one `#`
-  heading per rule.
-- Each rule file can declare which files it applies to via a frontmatter
-  header:
-  ```md
-  ---
-  applies_to: **/*.ts, **/*.tsx
-  ---
-  ```
-  A Python-only diff never loads your TypeScript rules; a `.tsx` change
-  only loads your React rules. No frontmatter means "applies to
-  everything."
-- Collects the combined staged + unstaged diff for tracked files
-  (`git diff HEAD`), plus surrounding file content, as context.
-- Sends one `choice` question per applicable rule to Jev in as few
-  requests as possible — batched adaptively by measured payload size (not
-  a fixed count), since diff/file context size varies far more than rule
-  count does.
-- For anything Jev flags as a **violation**, a smaller follow-up request
-  asks two more questions per violation: a `score` question rating
-  **severity** (Minor → Moderate → Major → Blocking), and a `choice`
-  question picking which specific added block of code is responsible.
-- Real line numbers for that block come from parsing the diff's own hunk
-  headers — never invented by the model. Clicking a violation jumps
-  straight to that file/line; it also shows up as a Problems-panel
-  diagnostic.
-- Results are grouped in the sidebar by outcome (Violations and errors on
-  top and expanded; Compliant/Not applicable collapsed at the bottom,
-  since with hundreds of rules those are mostly noise, not signal), sorted
-  within Violations by severity.
-- Works offline too: with no API key configured, a labeled **OFFLINE
-  MOCK** mode runs simple heuristics instead of a live call, so you can
-  still see the UI flow.
+  heading per rule. A frontmatter `applies_to:` line scopes each file to
+  matching paths, so a Python-only diff never loads your TypeScript rules.
+- Collects the diff plus surrounding file content as context.
+- Sends one `choice` question per applicable rule to Jev, in as few
+  requests as possible. Requests are batched by measured payload size, not
+  a fixed count, since diff/context size varies far more than rule count.
+- For each **violation**, a smaller follow-up asks Jev for a **severity**
+  (Minor → Moderate → Major → Blocking) and which added block of code is
+  responsible.
+- Real line numbers for that block come from the diff's own hunk headers —
+  never invented by the model.
 
-## Three ways it runs
+## Ways to run it
 
-1. **Automatically, whenever code changes settle** — opt-in
-   (`jevCodeCheck.autoAnalyzeOnSave`, off by default with an explicit
-   consent dialog). Debounced to fire once edits pause for ~1s, so it
-   naturally fires when an LLM agent finishes a burst of edits, not
-   mid-stream. This is backed by a filesystem watcher, not just editor
-   events — an external tool (an AI coding agent, a formatter, anything)
-   writing files directly to disk is picked up even if that file was never
-   opened in an editor tab, which a plain "on save" hook would miss.
-2. **Manually** — **Jev: Analyze changes** command, or the sync icon in
-   the sidebar's title bar.
-3. **In CI, on a pull request** — `scripts/review-pr.ts` runs the identical
-   rule-matching + Jev pipeline against a PR's committed diff (base...HEAD)
-   and posts a GitHub review comment on each violation it can localize to a
-   file/line. See `.github/workflows/jev-review.yml`. It reuses the same
-   `src/` modules as the editor extension — no separate implementation to
-   keep in sync. Requires the `TYPESAFE_API_KEY` secret; re-runs on the
-   same PR don't repost a comment already there for the same rule. Skips
-   fork PRs (no `pull_request_target`, to avoid running PR code with
-   base-repo secrets).
+All of these need a TypeSafe API key, `TYPESAFE_API_KEY`. The editor
+stores it for you (**Jev: Set Jev API key**). The command line looks for
+it in this order:
 
-## Why "rules as data"
+1. The environment.
+2. A `.env` file in the repository being checked.
+3. A `.env` file in this repository's root, next to `package.json`.
+
+The simplest setup is a single `.env` here containing
+`TYPESAFE_API_KEY=...`. Every repository you check, and every agent that
+runs the check, then uses it with no extra setup. `.env` is gitignored.
+
+### 1. In your editor
+
+A VS Code / Cursor extension. Run **Jev: Analyze changes** (or the sync
+icon in the sidebar), or opt in to automatic analysis with **Jev: Toggle
+automatic analysis for this workspace**. Automatic mode is backed by a
+filesystem watcher, debounced to fire once edits pause for ~1s, so it also
+picks up files written to disk by an AI agent or formatter, not just
+editor saves.
+
+Results are grouped by outcome (violations first, sorted by severity) and
+show up as Problems-panel diagnostics; clicking one jumps to the line.
+With no API key, a labeled **OFFLINE MOCK** mode runs simple heuristics so
+you can still see the UI flow.
+
+```bash
+npm run install:extension
+```
+
+This builds, packages, and installs into whichever of `cursor`/`code` is on
+your PATH. Or: `npm run package`, then Extensions view → `...` → **Install
+from VSIX...**. See `INSTALL.md` for a step-by-step walkthrough. The
+extension ships with **no rules**; if your workspace has no `jev/`
+directory, the sidebar's empty state scaffolds a starter rule file.
+
+### 2. From the command line
+
+`scripts/review-pr.ts` runs the same pipeline without an editor:
+
+```bash
+# Uncommitted (staged + unstaged) changes vs HEAD
+node --import tsx scripts/review-pr.ts --working-tree
+
+# Current branch vs its base, i.e. what a PR would show
+node --import tsx scripts/review-pr.ts --base origin/main --dry-run
+```
+
+Each violation is printed as JSON (`ruleName`, `ruleInstructions`,
+`severity`, `path`, `line`). To check a *different* repository, point
+`--cwd` at it; its own `jev/` directory is used:
+
+```bash
+/path/to/jevrealtimecodecheck/node_modules/.bin/tsx \
+  /path/to/jevrealtimecodecheck/scripts/review-pr.ts --cwd . --working-tree
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--working-tree` | off | Check uncommitted changes vs `HEAD` and print findings (never posts). |
+| `--base <ref>` | `origin/main` | Base ref for branch mode (`base...HEAD`). |
+| `--dry-run` | off | In branch mode, print findings instead of posting PR comments. |
+| `--fail-on-violation` | off | Exit with code 1 if any violation is found. |
+| `--cwd <dir>` | current dir | Repository to check. |
+| `--rules-dir <dir>` | `jev` | Rule directory, relative to `--cwd`. |
+
+Untracked files are not part of `git diff`. Run `git add -N <file>` on new
+files so they are checked.
+
+### 3. In CI, on a pull request
+
+`.github/workflows/jev-review.yml` runs the script against the PR's diff
+(`base...HEAD`) and posts a review comment on each violation it can place
+on a file/line. Re-runs don't repost a comment that is already there.
+Requires the `TYPESAFE_API_KEY` repository secret. Fork PRs are skipped
+(no `pull_request_target`, to avoid running PR code with base-repo
+secrets).
+
+### 4. From a coding agent, via AGENTS.md
+
+Agents (Claude Code, Codex, Cursor, etc.) read `AGENTS.md` (or
+`CLAUDE.md`) for project instructions. Add a section telling the agent to
+run the check on its own changes before it reports a task as done:
+
+~~~md
+## Rule check (Jev)
+
+Before reporting a coding task as done, check your changes against the
+project rules in `jev/`:
+
+1. Run `git add -N <file>` for any new file you created, so it is part of
+   the diff.
+2. Run:
+   ```bash
+   /path/to/jevrealtimecodecheck/node_modules/.bin/tsx \
+     /path/to/jevrealtimecodecheck/scripts/review-pr.ts \
+     --cwd . --working-tree --fail-on-violation
+   ```
+3. If it exits non-zero, each violation is printed as JSON with
+   `ruleName`, `ruleInstructions`, `severity`, `path`, and `line`. Fix the
+   code and run it again. If you believe a finding is wrong, say so in your
+   reply instead of changing the code to satisfy it.
+4. Never edit files in `jev/` to make the check pass.
+~~~
+
+One-time setup: clone this repository, run `npm install` in it, and put
+your key in its `.env` (see above). The agent needs nothing else.
+
+## Rules are data
 
 Rules are just Markdown you write and version-control like any other
 project file — no plugin code, no schema beyond a heading and an optional
-frontmatter line. This repo ships **479 example rules across 11 file
-types** as a starting point/stress test (TypeScript, React/TSX, CSS, Sass,
-Markdown, Python, Go, JSON, YAML, HTML, and shell), each with a Good/Bad
-code example, spanning style/convention, language-specific "gotchas" (real
-semantic footguns — `.forEach` not awaiting async, YAML's `NO` parsing as
-`false`, Go's pre-1.22 loop-variable capture), and per-language performance,
-security, and UI/accessibility best practices (path traversal, ReDoS,
-`shell=True` injection, SQL string-building, focus-visible styles, layout
-shift, touch target size, and more):
-
-| File | Applies to | Rules |
-|---|---|---|
-| `jev/typescript.md` | `**/*.ts` | 139 |
-| `jev/python.md` | `**/*.py` | 56 |
-| `jev/css.md` | `**/*.css` | 47 |
-| `jev/go.md` | `**/*.go` | 42 |
-| `jev/shell.md` | `**/*.sh` | 29 |
-| `jev/markdown.md` | `**/*.md` | 29 |
-| `jev/html.md` | `**/*.html` | 35 |
-| `jev/react.md` | `**/*.tsx` | 33 |
-| `jev/scss.md` | `**/*.scss` | 28 |
-| `jev/yaml.md` | `**/*.yml`, `**/*.yaml` | 21 |
-| `jev/json.md` | `**/*.json` | 20 |
-
-Delete what you don't need, edit anything, or write your own — a rule file
-is just:
+frontmatter line:
 
 ~~~md
 ---
@@ -117,33 +168,33 @@ console.log("Config loaded", path);
 ```
 ~~~
 
-## Install
+No frontmatter means the file applies to every changed file.
 
-```bash
-npm run install:extension
-```
+This repo ships **584 example rules across 13 file types** as a starting
+point. Each has a Good/Bad example. They lean toward good practices and
+language-specific "gotchas" (real semantic footguns: `.forEach` not
+awaiting async, YAML's `NO` parsing as `false`, Go's pre-1.22 loop-variable
+capture, Rust's silent `as` truncation, C++ iterator invalidation), plus
+security, performance, and UI/accessibility practices. Delete what you
+don't need, edit anything, or write your own.
 
-Builds, packages, and installs into whichever of `cursor`/`code` is on your
-PATH, in one step. Or manually: `npm run package` produces a `.vsix`, then
-Extensions view → `...` → **Install from VSIX...**.
+| File | Applies to | Rules |
+|---|---|---|
+| `jev/typescript.md` | `**/*.ts` | 139 |
+| `jev/python.md` | `**/*.py` | 56 |
+| `jev/cpp.md` | `**/*.cpp`, `**/*.cc`, `**/*.cxx`, `**/*.h`, `**/*.hpp`, `**/*.hh`, `**/*.hxx` | 53 |
+| `jev/rust.md` | `**/*.rs` | 52 |
+| `jev/css.md` | `**/*.css` | 47 |
+| `jev/go.md` | `**/*.go` | 42 |
+| `jev/html.md` | `**/*.html` | 35 |
+| `jev/react.md` | `**/*.tsx` | 33 |
+| `jev/shell.md` | `**/*.sh` | 29 |
+| `jev/markdown.md` | `**/*.md` | 29 |
+| `jev/scss.md` | `**/*.scss` | 28 |
+| `jev/yaml.md` | `**/*.yml`, `**/*.yaml` | 21 |
+| `jev/json.md` | `**/*.json` | 20 |
 
-The extension ships with **no rules** — that's intentionally left to
-whoever installs it. If your workspace has no `jev/` directory yet, the
-sidebar's empty state is clickable and runs **Jev: Create example rule**,
-which scaffolds a single starter `jev/example.md` (`applies_to: **/*`) to
-edit from, rather than requiring you to write the format from scratch.
-
-## Setup
-
-1. Command Palette → **Jev: Set Jev API key** (stored in VS Code
-   SecretStorage; alternatively set `TYPESAFE_API_KEY` in the launching
-   environment). Without a key, results are labeled **OFFLINE MOCK**.
-2. Open the **Jev Code Check** icon in the Activity Bar.
-3. Run **Jev: Analyze changes**, or enable automatic analysis via
-   **Jev: Toggle automatic analysis for this workspace** (opt-in, with an
-   explicit confirmation dialog explaining what gets sent).
-
-## Configuration
+## Editor configuration
 
 | Setting | Default | Description |
 |---|---|---|
@@ -158,9 +209,10 @@ edit from, rather than requiring you to write the format from scratch.
 ## Project layout
 
 ```
-src/                  Extension source (TypeScript)
+src/                  Analysis engine + editor extension (TypeScript)
+scripts/review-pr.ts  Command-line / CI / agent entry point
 test/                 Unit tests (node:test)
-jev/                  Rule files for this repo's own code (dogfooding)
+jev/                  Example rule files (also used on this repo's own code)
 demo-fixture/         Small React app + jev/ rules for a guided before/after demo
 playground.ts         Scratch file for exercising rules against real edits
 ```

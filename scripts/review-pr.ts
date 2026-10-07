@@ -10,14 +10,19 @@
  * Usage (see .github/workflows/jev-review.yml for the intended CI usage):
  *   node --import tsx scripts/review-pr.ts [--base <ref>] [--rules-dir <dir>] [--dry-run]
  *
- * Required env: TYPESAFE_API_KEY.
+ * With --working-tree, reviews uncommitted (staged + unstaged) changes vs
+ * HEAD instead of base...HEAD, and always prints findings rather than
+ * posting them — the mode a local terminal or a coding agent uses.
+ *
+ * Required env: TYPESAFE_API_KEY. If it is not already set, it is read from
+ * a .env file in the checked repo (--cwd), then from this tool's own .env.
  * For posting comments: GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_EVENT_PATH
  * (all set automatically by GitHub Actions on a pull_request event). Without
  * them, findings are printed to stdout instead (useful for local dry runs).
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { collectGitDiffAgainstRef } from "../src/gitDiff";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { collectGitDiff, collectGitDiffAgainstRef } from "../src/gitDiff";
 import { collectFileContext } from "../src/fileContext";
 import { loadRuleFiles } from "../src/ruleFiles";
 import { matchesAnyGlob } from "../src/globMatch";
@@ -36,6 +41,7 @@ interface CliOptions {
   maxRulesPerRequest: number;
   dryRun: boolean;
   failOnViolation: boolean;
+  workingTree: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -51,6 +57,7 @@ function parseArgs(argv: string[]): CliOptions {
     maxRulesPerRequest: 20,
     dryRun: false,
     failOnViolation: false,
+    workingTree: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -63,6 +70,7 @@ function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--max-rules-per-request") opts.maxRulesPerRequest = Number(argv[++i]);
     else if (arg === "--dry-run") opts.dryRun = true;
     else if (arg === "--fail-on-violation") opts.failOnViolation = true;
+    else if (arg === "--working-tree") opts.workingTree = true;
   }
   return opts;
 }
@@ -137,27 +145,52 @@ async function postFindingsToGithub(findings: Finding[]): Promise<void> {
   console.log(`Posted ${plan.toPost.length} new review comment(s) (${plan.skippedAlreadyPosted} already present from a prior run).`);
 }
 
-async function main(): Promise<void> {
-  const apiKey = process.env.TYPESAFE_API_KEY;
-  if (!apiKey) {
-    console.error("TYPESAFE_API_KEY is required.");
-    process.exit(1);
+/**
+ * Fills unset environment variables from simple KEY=value .env files. Values
+ * already in the environment always win, and earlier files win over later
+ * ones. (Hand-rolled because process.loadEnvFile needs Node >= 20.12/21.7.)
+ */
+function loadEnvFiles(paths: string[]): void {
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+      const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (!match) continue;
+      const [, key, raw] = match;
+      const value = raw.replace(/^(["'])(.*)\1$/, "$2");
+      if (process.env[key] === undefined) process.env[key] = value;
+    }
   }
+}
 
+async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const cwd = options.cwd;
 
-  const diffResult = await collectGitDiffAgainstRef(cwd, options.baseRef);
+  const toolRoot = resolve(__dirname, "..");
+  loadEnvFiles([resolve(cwd, ".env"), resolve(toolRoot, ".env")]);
+
+  const apiKey = process.env.TYPESAFE_API_KEY;
+  if (!apiKey) {
+    console.error(
+      `TYPESAFE_API_KEY is required: set it in the environment, or in a .env file in ${resolve(cwd)} or ${toolRoot}.`
+    );
+    process.exit(1);
+  }
+
+  const diffResult = options.workingTree
+    ? await collectGitDiff(cwd)
+    : await collectGitDiffAgainstRef(cwd, options.baseRef);
   if (diffResult.kind === "unsupported") {
     console.error(`Cannot review: ${diffResult.reason}`);
     process.exit(1);
   }
   if (diffResult.kind === "empty") {
-    console.log(`No changes vs ${options.baseRef} — nothing to review.`);
+    console.log(`No changes vs ${options.workingTree ? "HEAD" : options.baseRef} — nothing to review.`);
     return;
   }
 
-  const ruleFiles = await loadRuleFiles(join(cwd, options.rulesDir));
+  const ruleFiles = await loadRuleFiles(resolve(cwd, options.rulesDir));
   if (ruleFiles.length === 0) {
     console.log(`No rule files (*.md) found in "${options.rulesDir}/" — nothing to check.`);
     return;
@@ -211,7 +244,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (options.dryRun) {
+  if (options.dryRun || options.workingTree) {
     for (const f of findings) console.log(JSON.stringify(f, null, 2));
   } else {
     await postFindingsToGithub(findings);
