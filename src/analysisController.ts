@@ -6,8 +6,7 @@ import { callJev, enrichViolations, JevApiError, JevState } from "./jevClient";
 import { mockAnalyze } from "./mockJev";
 import { getApiKey } from "./credentials";
 import { firstChangedLineByFile, parseDiffBlocks } from "./diffLocations";
-import { loadRuleFiles, RuleFile } from "./ruleFiles";
-import { matchesAnyGlob } from "./globMatch";
+import { loadRuleFiles, selectApplicableRules } from "./ruleFiles";
 import { AnalysisResult, Rule, RuleAssessment } from "./types";
 
 export type AnalysisStatus =
@@ -25,24 +24,6 @@ export interface AnalysisConfig {
   maxFileContextChars: number;
   maxTotalContextChars: number;
   maxRulesPerRequest: number;
-}
-
-/**
- * Combines rules from every rule file whose `applies_to` globs match at
- * least one changed file. Rule ids are namespaced per file
- * (`<file>::<rule-id>`) since parseRules only guarantees uniqueness within
- * a single file, and multiple rule files are now combined into one set of
- * Jev questions.
- */
-function selectApplicableRules(
-  ruleFiles: RuleFile[],
-  changedFiles: string[]
-): { rules: Rule[]; matchedFileNames: string[] } {
-  const matched = ruleFiles.filter((rf) => changedFiles.some((f) => matchesAnyGlob(f, rf.globs)));
-  const rules: Rule[] = matched.flatMap((rf) =>
-    rf.rules.map((r) => ({ ...r, id: `${rf.relPath}::${r.id}` }))
-  );
-  return { rules, matchedFileNames: matched.map((rf) => rf.relPath) };
 }
 
 export class AnalysisController {

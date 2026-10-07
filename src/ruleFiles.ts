@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { matchesAnyGlob } from "./globMatch";
 import { parseRules } from "./rulesParser";
 import { Rule } from "./types";
 
@@ -72,4 +73,25 @@ export async function loadRuleFiles(rulesDirAbsPath: string): Promise<RuleFile[]
     files.push({ filePath, relPath: name, globs, rules });
   }
   return files;
+}
+
+/**
+ * Combines rules from every rule file whose `applies_to` globs match at
+ * least one changed file. Rule ids are namespaced per file
+ * (`<file>::<rule-id>`) since parseRules only guarantees uniqueness within
+ * a single file, and multiple rule files are combined into one set of Jev
+ * questions. Each rule carries its file's globs as `appliesTo` (unless they
+ * cover every file), since a mixed diff still sends e.g. Rust changes along
+ * with TypeScript rules.
+ */
+export function selectApplicableRules(
+  ruleFiles: RuleFile[],
+  changedFiles: string[]
+): { rules: Rule[]; matchedFileNames: string[] } {
+  const matched = ruleFiles.filter((rf) => changedFiles.some((f) => matchesAnyGlob(f, rf.globs)));
+  const rules: Rule[] = matched.flatMap((rf) => {
+    const appliesTo = rf.globs.includes("**/*") ? undefined : rf.globs;
+    return rf.rules.map((r) => ({ ...r, id: `${rf.relPath}::${r.id}`, appliesTo }));
+  });
+  return { rules, matchedFileNames: matched.map((rf) => rf.relPath) };
 }

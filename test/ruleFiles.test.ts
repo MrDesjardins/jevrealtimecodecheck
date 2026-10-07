@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRuleFileContent, loadRuleFiles } from "../src/ruleFiles";
+import { parseRuleFileContent, loadRuleFiles, selectApplicableRules, RuleFile } from "../src/ruleFiles";
 
 test("parses applies_to frontmatter and strips it from the rules body", () => {
   const text = [
@@ -54,4 +54,19 @@ test("loadRuleFiles reads every .md file in the directory, ignoring non-md files
 test("loadRuleFiles returns an empty array when the directory does not exist", async () => {
   const files = await loadRuleFiles("/nonexistent/path/for/jev/rules");
   assert.deepEqual(files, []);
+});
+
+test("selectApplicableRules keeps only matching rule files and scopes their rules", () => {
+  const rule = { id: "r", name: "R", instructions: "", headingLine: 0 };
+  const ruleFiles: RuleFile[] = [
+    { filePath: "/j/ts.md", relPath: "ts.md", globs: ["**/*.ts"], rules: [rule] },
+    { filePath: "/j/py.md", relPath: "py.md", globs: ["**/*.py"], rules: [rule] },
+    { filePath: "/j/all.md", relPath: "all.md", globs: ["**/*"], rules: [rule] },
+  ];
+  const { rules, matchedFileNames } = selectApplicableRules(ruleFiles, ["src/a.ts", "src/b.rs"]);
+  assert.deepEqual(matchedFileNames, ["ts.md", "all.md"]);
+  assert.deepEqual(rules.map((r) => [r.id, r.appliesTo]), [
+    ["ts.md::r", ["**/*.ts"]],
+    ["all.md::r", undefined],
+  ]);
 });

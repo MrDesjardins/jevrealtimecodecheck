@@ -22,6 +22,8 @@ One engine (`src/`), four places to run it:
 - Reads a directory of Markdown rule files (default `jev/`), one `#`
   heading per rule. A frontmatter `applies_to:` line scopes each file to
   matching paths, so a Python-only diff never loads your TypeScript rules.
+  In a mixed diff, each rule is told its scope, and is only offered code
+  locations in matching files.
 - Collects the diff plus surrounding file content as context.
 - Sends one `choice` question per applicable rule to Jev, in as few
   requests as possible. Requests are batched by measured payload size, not

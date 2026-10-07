@@ -24,11 +24,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { collectGitDiff, collectGitDiffAgainstRef } from "../src/gitDiff";
 import { collectFileContext } from "../src/fileContext";
-import { loadRuleFiles } from "../src/ruleFiles";
-import { matchesAnyGlob } from "../src/globMatch";
+import { loadRuleFiles, selectApplicableRules } from "../src/ruleFiles";
 import { callJev, enrichViolations, JevApiError, JevState } from "../src/jevClient";
 import { parseDiffBlocks } from "../src/diffLocations";
-import { Rule } from "../src/types";
 import { Finding, buildCommentBody, planComments } from "../src/githubComments";
 
 interface CliOptions {
@@ -195,13 +193,12 @@ async function main(): Promise<void> {
     console.log(`No rule files (*.md) found in "${options.rulesDir}/" — nothing to check.`);
     return;
   }
-  const matched = ruleFiles.filter((rf) => diffResult.changedFiles.some((f) => matchesAnyGlob(f, rf.globs)));
-  const rules: Rule[] = matched.flatMap((rf) => rf.rules.map((r) => ({ ...r, id: `${rf.relPath}::${r.id}` })));
+  const { rules, matchedFileNames } = selectApplicableRules(ruleFiles, diffResult.changedFiles);
   if (rules.length === 0) {
     console.log(`None of the rule files in "${options.rulesDir}/" apply to the changed files.`);
     return;
   }
-  console.log(`Applying ${rules.length} rule(s) from: ${matched.map((f) => f.relPath).join(", ")}`);
+  console.log(`Applying ${rules.length} rule(s) from: ${matchedFileNames.join(", ")}`);
 
   let diff = diffResult.diff;
   const diffTruncated = diff.length > options.maxDiffChars;

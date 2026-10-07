@@ -3,6 +3,12 @@ export interface Rule {
   name: string;
   instructions: string;
   headingLine: number;
+  /**
+   * Globs from the rule file's `applies_to`, when it is narrower than every
+   * file. The whole diff is sent with every rule, so this tells Jev (and the
+   * location question) which changed files the rule may judge.
+   */
+  appliesTo?: string[];
 }
 
 export type RuleOutcome =

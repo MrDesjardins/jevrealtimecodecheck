@@ -66,6 +66,15 @@ test("buildRequestBody sends the review policy once in state, not per rule", () 
   }
 });
 
+test("buildRequestBody tells Jev a scoped rule's file globs, and leaves unscoped rules alone", () => {
+  const scoped = { ...makeRule("ts"), appliesTo: ["**/*.ts"] };
+  const body = buildRequestBody([scoped, makeRule("any")], makeState()) as {
+    questions: Record<string, { instructions: string }>;
+  };
+  assert.match(body.questions.ts.instructions, /applies ONLY to changed files matching \*\*\/\*\.ts/);
+  assert.ok(!body.questions.any.instructions.includes("Scope:"));
+});
+
 test("buildRequestBody creates one choice question per rule with a compliant/violation/not_applicable/insufficient_context criteria set", () => {
   const body = buildRequestBody([makeRule("r1")], makeState()) as {
     questions: Record<string, { type: string; criteria: Record<string, string> }>;
@@ -371,6 +380,30 @@ test("enrichViolations resolves a location choice to the matching diff block's f
       assert.equal(e?.locatedLine, 42);
     }
   );
+});
+
+test("enrichViolations offers a scoped rule only the diff blocks in its own files", async () => {
+  const rule = { ...makeRule("r1"), appliesTo: ["**/*.ts"] };
+  const diffBlocks = [
+    { file: "src/main.rs", startLine: 3, preview: "rust block" },
+    { file: "ui/app.ts", startLine: 9, preview: "ts block" },
+  ];
+  let criteria: Record<string, string> = {};
+  await withMockFetch(
+    async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        questions: Record<string, { criteria: Record<string, string> }>;
+      };
+      criteria = body.questions["r1__location"].criteria;
+      return jsonResponse({ answers: { "r1__location": { type: "choice", choice: "loc1" } } });
+    },
+    async () => {
+      const result = await enrichViolations("key", [{ rule }], makeState(), diffBlocks);
+      assert.equal(result.get("r1")?.locatedFile, "ui/app.ts");
+      assert.equal(result.get("r1")?.locatedLine, 9);
+    }
+  );
+  assert.deepEqual(Object.keys(criteria).sort(), ["loc1", "unclear"]);
 });
 
 test("enrichViolations leaves location null when the model chooses unclear", async () => {
