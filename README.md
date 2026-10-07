@@ -34,6 +34,48 @@ One engine (`src/`), four places to run it:
 - Real line numbers for that block come from the diff's own hunk headers —
   never invented by the model.
 
+## Setup
+
+Clone this repository **next to** the repositories you check, so they can
+all reach it as `../jevrealtimecodecheck`, then install its dependencies:
+
+```bash
+cd /path/to/your/code        # the folder that holds your repositories
+git clone https://github.com/MrDesjardins/jevrealtimecodecheck.git
+cd jevrealtimecodecheck
+npm ci
+```
+
+Then give it your API key (see below), for example a `.env` file here
+containing `TYPESAFE_API_KEY=...`.
+
+Check the setup from a repository that has a `jev/` folder:
+
+```bash
+node ../jevrealtimecodecheck/node_modules/tsx/dist/cli.mjs \
+  ../jevrealtimecodecheck/scripts/review-pr.ts --cwd . --working-tree
+```
+
+With no uncommitted code it prints that no rule applies and exits 0.
+Calling `node_modules/tsx/dist/cli.mjs` through `node` works on Windows,
+macOS and Linux alike; `node_modules/.bin/tsx` is a shell script that
+PowerShell and `cmd` cannot run directly.
+
+To match CI exactly, check out the commit your workflow pins
+(`git checkout <sha>`) instead of `main`.
+
+**Claude Code in auto mode** may refuse to run this command the first
+time, because it executes code from outside the repository being worked
+on. Allow it once with `/permissions`, or add to that repository's
+`.claude/settings.local.json`:
+
+```json
+{ "permissions": { "allow": [
+  "Bash(node ../jevrealtimecodecheck/node_modules/tsx/dist/cli.mjs ../jevrealtimecodecheck/scripts/review-pr.ts:*)",
+  "PowerShell(node ../jevrealtimecodecheck/node_modules/tsx/dist/cli.mjs ../jevrealtimecodecheck/scripts/review-pr.ts:*)"
+] } }
+```
+
 ## Ways to run it
 
 All of these need a TypeSafe API key, `TYPESAFE_API_KEY`. The editor
@@ -89,8 +131,8 @@ Each violation is printed as JSON (`ruleName`, `ruleInstructions`,
 `--cwd` at it; its own `jev/` directory is used:
 
 ```bash
-/path/to/jevrealtimecodecheck/node_modules/.bin/tsx \
-  /path/to/jevrealtimecodecheck/scripts/review-pr.ts --cwd . --working-tree
+node ../jevrealtimecodecheck/node_modules/tsx/dist/cli.mjs \
+  ../jevrealtimecodecheck/scripts/review-pr.ts --cwd . --working-tree
 ```
 
 | Flag | Default | Description |
@@ -128,10 +170,10 @@ project rules in `jev/`:
 
 1. Run `git add -N <file>` for any new file you created, so it is part of
    the diff.
-2. Run:
+2. Run, from the repository root:
    ```bash
-   /path/to/jevrealtimecodecheck/node_modules/.bin/tsx \
-     /path/to/jevrealtimecodecheck/scripts/review-pr.ts \
+   node ../jevrealtimecodecheck/node_modules/tsx/dist/cli.mjs \
+     ../jevrealtimecodecheck/scripts/review-pr.ts \
      --cwd . --working-tree --fail-on-violation
    ```
 3. If it exits non-zero, each violation is printed as JSON with
@@ -139,10 +181,14 @@ project rules in `jev/`:
    code and run it again. If you believe a finding is wrong, say so in your
    reply instead of changing the code to satisfy it.
 4. Never edit files in `jev/` to make the check pass.
+5. If `../jevrealtimecodecheck` is missing, set it up as described in
+   https://github.com/MrDesjardins/jevrealtimecodecheck#setup
+   (clone next to this repository, `npm ci`). If it still cannot run (no
+   API key, permission refused), report the check as not run, never as
+   passing.
 ~~~
 
-One-time setup: clone this repository, run `npm install` in it, and put
-your key in its `.env` (see above). The agent needs nothing else.
+One-time setup: see [Setup](#setup). The agent needs nothing else.
 
 ## Rules are data
 
